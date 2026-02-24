@@ -714,6 +714,22 @@
     if(!audioCtx) start();
   });
 
+  document.getElementById('logDebugInfo').addEventListener('click', ()=>{
+    console.log('=== AUDIO DEBUG INFO ===');
+    console.log('Sample Rate:', sampleRate);
+    console.log('Buffer Length (samples):', bufLen);
+    console.log('Buffer Write Position:', bufWrite);
+    if(audioCtx){
+      console.log('AudioContext State:', audioCtx.state);
+      console.log('AudioContext Sample Rate:', audioCtx.sampleRate);
+    }
+    console.log('Current LUFS values:', {
+      integrated: momentaryLufs,
+      momentary: momentaryLufs,
+      peak: peakLufs
+    });
+  });
+
   // theme and prefs handling
   function loadSettings(){
     try{
