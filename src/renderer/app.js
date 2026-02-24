@@ -271,7 +271,7 @@
       document.getElementById('sampleRms').textContent = stats.db.toFixed(1) + ' dBFS (' + stats.rmsLinear.toFixed(4) + ' lin)';
       document.getElementById('bufWriteDebug').textContent = bufWrite;
       document.getElementById('bufLenDebug').textContent = bufLen;
-      document.getElementById('rawPeakDebug').textContent = stats.peak.toFixed(4);
+      document.getElementById('rawPeakDebug').textContent = stats.peak.toFixed(4) + ' | Instant LUFS: ' + (10 * Math.log10(stats.rmsLinear * stats.rmsLinear)).toFixed(1);
       document.getElementById('meanSqDebug').textContent = (stats.rmsLinear * stats.rmsLinear).toFixed(6) + ' | Block meanPower: ' + (window._debugLUFS?.meanPower || 0).toFixed(9);
       document.getElementById('momBlocksDebug').textContent = momentaryBlocks.length + ' | Preliminary: ' + (window._debugLUFS?.preliminaryLUFS || 0).toFixed(1);
 
