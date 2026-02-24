@@ -230,18 +230,16 @@
         try{ drawGoniometer(leftArray, rightArray); }catch(e){}
       }catch(e){ /* ignore if channels not available */ }
       // push data into circular buffer for block LUFS processing
-      if(leftArray && rightArray && bufferL && bufferR){
-        const n = Math.min(leftArray.length, rightArray.length);
-        for(let i=0;i<n;i++){
-          bufferL[bufWrite] = leftArray[i] || 0;
-          bufferR[bufWrite] = rightArray[i] || 0;
-          bufWrite = (bufWrite + 1) % bufLen;
+      // Use main dataArray (2048 samples) for loudness calc, regardless of channel split
+      for(let i=0;i<dataArray.length;i++){
+        buffer[bufWrite] = dataArray[i];
+        // also accumulate stereo if available (for channel-aware LUFS later)
+        if(leftArray && rightArray){
+          const idx = i % Math.min(leftArray.length, rightArray.length);
+          bufferL[bufWrite] = leftArray[idx] || 0;
+          bufferR[bufWrite] = rightArray[idx] || 0;
         }
-      }else{
-        for(let i=0;i<dataArray.length;i++){
-          buffer[bufWrite] = dataArray[i];
-          bufWrite = (bufWrite + 1) % bufLen;
-        }
+        bufWrite = (bufWrite + 1) % bufLen;
       }
 
       // Feed WASM loudness meter if available (prefer stereo interleaved if possible)
@@ -268,6 +266,14 @@
       document.getElementById('lufsS').textContent = stats.peakLufs.toFixed(1) + ' LUFS';
       rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
       peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
+
+      // Debug info
+      document.getElementById('sampleRms').textContent = stats.db.toFixed(1) + ' dBFS (' + stats.rmsLinear.toFixed(4) + ' lin)';
+      document.getElementById('bufWriteDebug').textContent = bufWrite;
+      document.getElementById('bufLenDebug').textContent = bufLen;
+      document.getElementById('rawPeakDebug').textContent = stats.peak.toFixed(4);
+      document.getElementById('meanSqDebug').textContent = (stats.rmsLinear * stats.rmsLinear).toFixed(6);
+      document.getElementById('momBlocksDebug').textContent = momentaryBlocks.length;
 
       // update minimeter fills with smoothing and dB mapping (-60 dB -> 0, 0 dB -> 1)
       const now = audioCtx.currentTime || (Date.now()/1000);
@@ -648,26 +654,13 @@
     let readIdx = (bufWrite + 1) % bufLen; // approximate oldest sample
     for(let b=0;b<totalBlocks;b++){
       let s = 0;
-      if(bufferL && bufferR){
-        // stereo: average power of channels per block (BS.1770 sums channel energies)
-        let sL = 0, sR = 0;
-        for(let i=0;i<blockSize;i++){
-          const xL = bufferL[readIdx] || 0;
-          const xR = bufferR[readIdx] || 0;
-          sL += xL*xL;
-          sR += xR*xR;
-          readIdx = (readIdx + 1) % bufLen;
-        }
-        // mean square per channel, then mean across channels
-        s = (sL / blockSize + sR / blockSize) / 2.0;
-      }else{
-        for(let i=0;i<blockSize;i++){
-          const x = buffer[readIdx] || 0;
-          s += x*x;
-          readIdx = (readIdx + 1) % bufLen;
-        }
-        s = s / blockSize;
+      // Use main mono buffer (which now has all samples from dataArray)
+      for(let i=0;i<blockSize;i++){
+        const x = buffer[readIdx] || 0;
+        s += x*x;
+        readIdx = (readIdx + 1) % bufLen;
       }
+      s = s / blockSize;
       powers.push(s + 1e-18);
     }
 

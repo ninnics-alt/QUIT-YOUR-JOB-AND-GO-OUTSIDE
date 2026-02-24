@@ -56,6 +56,19 @@
         <div class="label">Peak (dBFS)</div>
         <div id="peak" class="value">—</div>
       </div>
+      <div class="meter">
+        <div class="label">Instant Sample RMS</div>
+        <div id="sampleRms" class="value">—</div>
+      </div>
+    </section>
+
+    <section class="debug">
+      <div style="font-size:9px;color:#888">
+        <div>Buffer Write: <span id="bufWriteDebug">0</span> / <span id="bufLenDebug">0</span></div>
+        <div>Raw Sample Peak: <span id="rawPeakDebug">0</span></div>
+        <div>Mean-Square: <span id="meanSqDebug">0</span></div>
+        <div>Momentary Blocks: <span id="momBlocksDebug">0</span></div>
+      </div>
     </section>
 
     <section class="minimeters">
