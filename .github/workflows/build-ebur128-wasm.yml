@@ -13,9 +13,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install emsdk
-        uses: mikeym/emsdk-action@v2
-        with:
-          emsdk-version: '3.1.39'
+        run: |
+          set -e
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install 3.1.39
+          ./emsdk activate 3.1.39
+          source ./emsdk_env.sh
+          echo "$(pwd)" >> $GITHUB_PATH
 
       - name: Build libebur128
         run: |
