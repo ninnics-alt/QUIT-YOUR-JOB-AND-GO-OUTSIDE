@@ -50,6 +50,14 @@
   let bufWrite = 0;
   let bufLen = 0;
 
+  // momentary LUFS: keep last 3 seconds (~8 blocks at 0.4s per block)
+  let momentaryLufs = -100;
+  let momentaryBlocks = [];
+  const momentaryBlockCount = 8;
+
+  // peak LUFS: track maximum LUFS
+  let peakLufs = -100;
+
   async function listDevices(){
     const devices = await navigator.mediaDevices.enumerateDevices();
     deviceSelect.innerHTML = '';
@@ -153,6 +161,7 @@
     source = audioCtx.createMediaStreamSource(stream);
 
     // K-weighting approximation: HPF + highshelf to approximate ITU pre-filter
+    // TEMPORARILY DISABLED FOR TESTING - seems to be causing 7-10 dB drop
     const hp = audioCtx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 60; // 60 Hz highpass (approx)
@@ -177,15 +186,12 @@
     leftArray = new Float32Array(analyserL.fftSize);
     rightArray = new Float32Array(analyserR.fftSize);
 
-    source.connect(hp);
-    hp.connect(shelf);
-    shelf.connect(analyser);
-    // connect to splitter for stereo scope (splitter takes the shelf output)
-    shelf.connect(splitter);
+    // BYPASS K-WEIGHT FOR TESTING: connect source directly to analyser
+    source.connect(analyser);
+    analyser.connect(splitter);
     splitter.connect(analyserL, 0);
     splitter.connect(analyserR, 1);
-    // keep chain head for future processing if needed
-    kWeightNodeHead = shelf;
+    kWeightNodeHead = analyser; // point to analyser instead of shelf
 
     // LUFS buffer: store 10s of audio to allow gating and integrated calc
     bufLen = sampleRate * 10 | 0;
@@ -258,6 +264,8 @@
       const stats = computeStatsAndLUFS(dataArray);
 
       lufsEl.textContent = stats.lufs.toFixed(1) + ' LUFS';
+      document.getElementById('lufsM').textContent = stats.momentaryLufs.toFixed(1) + ' LUFS';
+      document.getElementById('lufsS').textContent = stats.peakLufs.toFixed(1) + ' LUFS';
       rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
       peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
 
@@ -667,7 +675,7 @@
     try{
       if(window.EBUR128 && ebInited && typeof window.EBUR128.getIntegrated === 'function'){
         const wasmLufs = window.EBUR128.getIntegrated();
-        return {rms, db, peak, peakDb, lufs: wasmLufs, rmsLinear: rms, peak};
+        return {rms, db, peak, peakDb, lufs: wasmLufs, momentaryLufs, peakLufs, rmsLinear: rms, peak};
       }
     }catch(e){ console.warn('EBUR128 getIntegrated failed', e); }
 
@@ -685,7 +693,22 @@
     const finalMean = used.reduce((a,c)=>a+c,0)/used.length;
     const lufs = 10 * Math.log10(finalMean + 1e-18);
 
-    return {rms, db, peak, peakDb, lufs, rmsLinear: rms, peak};
+    // momentary LUFS: last 3 seconds (~8 blocks, no gating per ITU-R BS.1770-4)
+    momentaryBlocks.push(...powers);
+    if(momentaryBlocks.length > momentaryBlockCount){
+      momentaryBlocks = momentaryBlocks.slice(-momentaryBlockCount);
+    }
+    if(momentaryBlocks.length > 0){
+      const momentaryMean = momentaryBlocks.reduce((a,c)=>a+c,0)/momentaryBlocks.length;
+      momentaryLufs = 10 * Math.log10(momentaryMean + 1e-18);
+    }
+
+    // peak LUFS: track maximum LUFS value
+    if(lufs > peakLufs){
+      peakLufs = lufs;
+    }
+
+    return {rms, db, peak, peakDb, lufs, momentaryLufs, peakLufs, rmsLinear: rms, peak};
   }
 
   await listDevices();

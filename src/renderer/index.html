@@ -31,12 +31,23 @@
 
     <section class="meters">
       <div class="meter">
-        <div class="label">Approx LUFS</div>
+        <div class="label">Integrated LUFS</div>
         <div style="display:flex;align-items:center;gap:8px">
           <div id="lufs" class="value">—</div>
           <div id="wasmStatus" class="wasm-status">WASM: —</div>
         </div>
       </div>
+      <div class="meter">
+        <div class="label">Momentary LUFS (3s)</div>
+        <div id="lufsM" class="value">—</div>
+      </div>
+      <div class="meter">
+        <div class="label">Peak LUFS</div>
+        <div id="lufsS" class="value">—</div>
+      </div>
+    </section>
+
+    <section class="meters">
       <div class="meter">
         <div class="label">RMS (dBFS)</div>
         <div id="rms" class="value">—</div>
@@ -116,7 +127,7 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
   <script src="wasmLoader.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
