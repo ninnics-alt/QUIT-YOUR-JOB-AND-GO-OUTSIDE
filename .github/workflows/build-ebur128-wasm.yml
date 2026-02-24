@@ -12,28 +12,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install emsdk
+      - name: Install emsdk and build WASM
         run: |
           set -e
-          git clone https://github.com/emscripten-core/emsdk.git
-          cd emsdk
+          # Install emsdk
+          git clone https://github.com/emscripten-core/emsdk.git emsdk-build
+          cd emsdk-build
           ./emsdk install 3.1.39
           ./emsdk activate 3.1.39
           source ./emsdk_env.sh
-          echo "$(pwd)" >> $GITHUB_PATH
-
-      - name: Build libebur128
-        run: |
-          set -e
+          
+          # Clone and build libebur128
+          cd ..
           git clone https://github.com/ebu/libebur128.git libebur128
           cd libebur128
+          source ../emsdk-build/emsdk_env.sh
           emconfigure ./configure
           emmake make
-
-      - name: Build wrapper + WASM
-        run: |
-          set -e
-          # compile the wrapper.c from the repo against the built libebur128
+          
+          # Build wrapper + WASM
+          cd ..
+          source ./emsdk-build/emsdk_env.sh
           emcc src/wasm/wrapper.c \
             -I libebur128/include \
             -L libebur128/.libs -lebur128 \
