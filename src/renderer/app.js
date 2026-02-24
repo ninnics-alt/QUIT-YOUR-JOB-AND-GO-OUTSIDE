@@ -272,8 +272,8 @@
       document.getElementById('bufWriteDebug').textContent = bufWrite;
       document.getElementById('bufLenDebug').textContent = bufLen;
       document.getElementById('rawPeakDebug').textContent = stats.peak.toFixed(4);
-      document.getElementById('meanSqDebug').textContent = (stats.rmsLinear * stats.rmsLinear).toFixed(6);
-      document.getElementById('momBlocksDebug').textContent = momentaryBlocks.length;
+      document.getElementById('meanSqDebug').textContent = (stats.rmsLinear * stats.rmsLinear).toFixed(6) + ' | Block meanPower: ' + (window._debugLUFS?.meanPower || 0).toFixed(9);
+      document.getElementById('momBlocksDebug').textContent = momentaryBlocks.length + ' | Preliminary: ' + (window._debugLUFS?.preliminaryLUFS || 0).toFixed(1);
 
       // update minimeter fills with smoothing and dB mapping (-60 dB -> 0, 0 dB -> 1)
       const now = audioCtx.currentTime || (Date.now()/1000);
@@ -675,6 +675,9 @@
     // preliminary integrated (ungated)
     const meanPower = powers.reduce((a,c)=>a+c,0)/powers.length;
     const preliminaryLUFS = 10 * Math.log10(meanPower + 1e-18);
+
+    // Store for debug
+    window._debugLUFS = {meanPower, preliminaryLUFS, numBlocks: powers.length, blockSize, firstPower: powers[0]};
 
     // gating per ITU idea (approx): absolute gate = -70 LUFS, relative gate = preliminary -10 dB
     const absoluteGateLinear = Math.pow(10, -70.0/10.0); // -70 LUFS absolute gate
