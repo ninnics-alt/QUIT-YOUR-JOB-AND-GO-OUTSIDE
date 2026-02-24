@@ -1,0 +1,46 @@
+name: Build libebur128 WASM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install emsdk
+        uses: mikeym/emsdk-action@v2
+        with:
+          emsdk-version: '3.1.39'
+
+      - name: Build libebur128
+        run: |
+          set -e
+          git clone https://github.com/ebu/libebur128.git libebur128
+          cd libebur128
+          emconfigure ./configure
+          emmake make
+
+      - name: Build wrapper + WASM
+        run: |
+          set -e
+          # compile the wrapper.c from the repo against the built libebur128
+          emcc src/wasm/wrapper.c \
+            -I libebur128/include \
+            -L libebur128/.libs -lebur128 \
+            -O3 \
+            -s EXTRA_EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+            -s EXPORTED_FUNCTIONS='["_eb_init","_eb_add_samples","_eb_get_i_loudness","_eb_reset"]' \
+            -o src/wasm/ebur128.js
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebur128-wasm
+          path: |
+            src/wasm/ebur128.js
+            src/wasm/ebur128.wasm

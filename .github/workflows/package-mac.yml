@@ -1,0 +1,33 @@
+name: Package macOS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Package (x64 and arm64)
+      run: |
+        npm run package:mac:x64
+        npm run package:mac:arm64
+
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: mac-dist
+        path: dist/

@@ -1,0 +1,16 @@
+{
+  "name": "quit-your-job-and-go-outside",
+  "productName": "QUIT YOUR JOB AND GO OUTSIDE",
+  "version": "0.1.0",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:wasm": "emcc src/wasm/wrapper.c -I libebur128/include -L libebur128/.libs -lebur128 -O3 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"cwrap\"]' -s EXPORTED_FUNCTIONS='[\"_eb_init\",\"_eb_add_samples\",\"_eb_get_i_loudness\",\"_eb_reset\"]' -o src/wasm/ebur128.js",
+    "package:mac:x64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=x64 --overwrite --out=dist",
+    "package:mac:arm64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=arm64 --overwrite --out=dist"
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-packager": "^16.0.0"
+  }
+}

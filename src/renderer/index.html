@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QUIT YOUR JOB AND GO OUTSIDE</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="container">
+    <header>
+      <h1>QUIT YOUR JOB AND GO OUTSIDE</h1>
+      <div class="controls">
+        <select id="deviceSelect"></select>
+        <button id="refreshDevices">Refresh</button>
+        <button id="start">Start</button>
+        <button id="openDevtools">DevTools</button>
+        <button id="openDevicePanel">Devices</button>
+        <button id="openLayout">Edit Layout</button>
+      </div>
+      <div class="prefs">
+        <label for="themeSelect">Theme</label>
+        <select id="themeSelect">
+          <option value="ps2">PS2 Retro Color</option>
+          <option value="neon">Neon</option>
+        </select>
+        <label class="auto"><input type="checkbox" id="autoStart"/> Auto Start</label>
+      </div>
+    </header>
+
+    <section class="meters">
+      <div class="meter">
+        <div class="label">Approx LUFS</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div id="lufs" class="value">—</div>
+          <div id="wasmStatus" class="wasm-status">WASM: —</div>
+        </div>
+      </div>
+      <div class="meter">
+        <div class="label">RMS (dBFS)</div>
+        <div id="rms" class="value">—</div>
+      </div>
+      <div class="meter">
+        <div class="label">Peak (dBFS)</div>
+        <div id="peak" class="value">—</div>
+      </div>
+    </section>
+
+    <section class="minimeters">
+      <div class="mini">
+        <div class="mini-label">RMS</div>
+        <div class="mini-bar" id="rmsBar"><div class="fill"></div></div>
+      </div>
+      <div class="mini">
+        <div class="mini-label">Peak</div>
+        <div class="mini-bar" id="peakBar"><div class="fill"></div></div>
+      </div>
+    </section>
+
+    <!-- device debug moved to modal/panel -->
+
+    <canvas id="wave" width="512" height="128"></canvas>
+    <div class="visual-row">
+      <div class="visual-left">
+        <canvas id="vectorscope" width="256" height="256"></canvas>
+      </div>
+      <div class="visual-right">
+        <div class="corr">
+          <div class="label">Stereo Correlation</div>
+          <div id="corrVal">—</div>
+        </div>
+      </div>
+    </div>
+    <section class="more-visuals">
+      <div class="vis-col">
+        <div class="vis-block">
+          <div class="vis-title">Oscilloscope</div>
+          <canvas id="osc" width="800" height="160"></canvas>
+        </div>
+        <div class="vis-block">
+          <div class="vis-title">Spectrogram</div>
+          <canvas id="specgram" width="800" height="160"></canvas>
+        </div>
+      </div>
+      <div class="vis-col">
+        <div class="vis-block">
+          <div class="vis-title">Spectrograph</div>
+          <canvas id="specgraph" width="300" height="320"></canvas>
+        </div>
+        <div class="vis-block">
+          <div class="vis-title">Goniometer</div>
+          <canvas id="goniometer" width="300" height="320"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="devicePanel" class="panel hidden">
+    <div class="panel-inner">
+      <button id="closeDevicePanel" class="close">Close</button>
+      <h3>Available Audio Devices</h3>
+      <div id="deviceListPanel"></div>
+    </div>
+  </div>
+
+  <div id="layoutPanel" class="panel hidden">
+    <div class="panel-inner">
+      <button id="closeLayoutPanel" class="close">Close</button>
+      <h3>Layout Editor</h3>
+      <div id="layoutList"></div>
+      <div style="margin-top:10px">
+        <button id="resetLayout">Reset Layout</button>
+        <button id="saveLayout">Save Layout</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="wasmLoader.js"></script>
+</body>
+</html>
