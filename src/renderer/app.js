@@ -30,6 +30,9 @@
   const goniCanvas = document.getElementById('goniometer');
   const goniCtx = goniCanvas.getContext('2d');
 
+  // Meter engine (loaded from meter-engine.js script tag)
+  let meterEngine = null;
+
   let audioCtx, analyser, dataArray, source, stream;
   let splitter, analyserL, analyserR, leftArray, rightArray;
   let integratedPower = 1e-12;
@@ -57,6 +60,48 @@
 
   // peak LUFS: track maximum LUFS
   let peakLufs = -100;
+
+  // ===== ITU-R BS.1770-4 LUFS STATE (NEW) =====
+  let lufsBlockBuffer, lufsBlockIdx, blockSamples, hopSamples;
+  let lufsBlocks = [];
+  let samplePeakInstant = 0;
+  let samplePeakHold = -Infinity;
+
+  // ============ K-WEIGHTING FILTER (ITU-R BS.1770-4) ============
+  // Biquad filter coefficients for 48kHz sample rate
+  const kWeightCoeffs = {
+    hp: {
+      b0: 0.9996564871583742, b1: -1.9993129743167484, b2: 0.9996564871583742,
+      a1: -1.9993129743167484, a2: 0.9993138313246673
+    },
+    shelf: {
+      b0: 1.040678792313195, b1: -2.0611545669340947, b2: 1.0203649589279294,
+      a1: -2.0626373184776533, a2: 1.0630254919031936
+    }
+  };
+
+  class BiquadFilter {
+    constructor(coeffs) {
+      this.b0 = coeffs.b0; this.b1 = coeffs.b1; this.b2 = coeffs.b2;
+      this.a1 = coeffs.a1; this.a2 = coeffs.a2;
+      this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
+    }
+    process(x) {
+      const y = this.b0*x + this.b1*this.x1 + this.b2*this.x2 - this.a1*this.y1 - this.a2*this.y2;
+      this.x2 = this.x1; this.x1 = x;
+      this.y2 = this.y1; this.y1 = y;
+      return y;
+    }
+  }
+
+  // K-weighting filter chain instances (per channel)
+  let kWeightL, kWeightL2, kWeightR, kWeightR2;
+
+  function applyKWeight(sample, isRight = false) {
+    const filt1 = isRight ? kWeightR : kWeightL;
+    const filt2 = isRight ? kWeightR2 : kWeightL2;
+    return filt2.process(filt1.process(sample));
+  }
 
   async function listDevices(){
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -160,6 +205,26 @@
     sampleRate = audioCtx.sampleRate || 48000;
     source = audioCtx.createMediaStreamSource(stream);
 
+    // Debug: Log stream info
+    console.log('[Audio] Stream active:', stream.active);
+    console.log('[Audio] Tracks:', stream.getTracks().map(t => ({
+      kind: t.kind,
+      label: t.label,
+      enabled: t.enabled,
+      muted: t.muted,
+      readyState: t.readyState
+    })));
+
+    // instantiate MeterEngine with the actual sample rate
+    try{
+      if(window.MeterEngine){
+        meterEngine = new window.MeterEngine(sampleRate);
+        console.log('[MeterEngine] Initialized with sample rate:', sampleRate);
+      }else{
+        console.warn('[MeterEngine] Class not available on window');
+      }
+    }catch(e){ console.warn('Could not create MeterEngine', e); }
+
     // K-weighting approximation: HPF + highshelf to approximate ITU pre-filter
     // TEMPORARILY DISABLED FOR TESTING - seems to be causing 7-10 dB drop
     const hp = audioCtx.createBiquadFilter();
@@ -199,6 +264,20 @@
     bufferL = new Float32Array(bufLen);
     bufferR = new Float32Array(bufLen);
     bufWrite = 0;
+
+    // Initialize ITU-R BS.1770-4 LUFS state
+    blockSamples = Math.floor(sampleRate * 0.4); // 400 ms blocks
+    hopSamples = Math.floor(sampleRate * 0.1);   // 100 ms hop
+    lufsBlockBuffer = new Float32Array(blockSamples);
+    lufsBlockIdx = 0;
+    lufsBlocks = [];
+    samplePeakHold = -Infinity;
+
+    // Initialize K-weighting filters
+    kWeightL = new BiquadFilter(kWeightCoeffs.hp);
+    kWeightL2 = new BiquadFilter(kWeightCoeffs.shelf);
+    kWeightR = new BiquadFilter(kWeightCoeffs.hp);
+    kWeightR2 = new BiquadFilter(kWeightCoeffs.shelf);
 
     // Initialize EBUR128 WASM if available
     try{
@@ -259,7 +338,56 @@
         }catch(e){ console.warn('Error feeding EBUR128', e); }
       }
 
-      const stats = computeStatsAndLUFS(dataArray);
+      // Prefer new MeterEngine if available; fall back to existing computeStatsAndLUFS
+      let stats;
+      if(meterEngine && leftArray && rightArray){
+        try{
+          // Debug: Check input signal levels
+          const maxL = Math.max(...leftArray.map(Math.abs));
+          const maxR = Math.max(...rightArray.map(Math.abs));
+          
+          meterEngine.processStereoBuffer(leftArray, rightArray, audioCtx.currentTime || (Date.now()/1000));
+          const m = meterEngine.getMetrics();
+          
+          // Debug: Log signal and block info every 2 seconds
+          if(!window.lastDebugLog || (Date.now() - window.lastDebugLog) > 2000){
+            console.log(`[MeterEngine] INPUT: L=${maxL.toFixed(4)} R=${maxR.toFixed(4)} bufLen=${leftArray.length} | METERS: peak=${m.peakLinear.toFixed(4)} rms=${m.rmsLinear.toFixed(4)} | LUFS: blocks=${m.blockCount} M=${m.lufsMomentary.toFixed(1)} I=${m.lufsIntegrated.toFixed(1)}`);
+            if(maxL === 0 && maxR === 0){
+              console.warn('⚠️ NO AUDIO INPUT DETECTED - Check that your input device is sending audio (play music, speak into mic, etc.)');
+            }
+            window.lastDebugLog = Date.now();
+          }
+          
+          stats = {
+            lufs: m.lufsIntegrated,
+            momentaryLufs: m.lufsMomentary,
+            peakLufs: m.lufsPeak,
+            db: m.rmsDbfs,
+            peak: m.peakLinear,
+            peakDb: m.peakDbfs,
+            holdDb: m.peakHoldDbfs,
+            rmsLinear: m.rmsLinear
+          };
+        }catch(e){
+          console.warn('MeterEngine processing error, falling back', e);
+          stats = computeStatsAndLUFS(dataArray);
+        }
+      }else{
+        if(meterEngine && (!leftArray || !rightArray)){
+          console.warn('[MeterEngine] No input: leftArray=', !!leftArray, 'rightArray=', !!rightArray);
+        }
+        stats = computeStatsAndLUFS(dataArray);
+        
+        // Debug: Check if main analyser is receiving audio
+        if(!window.lastMainAnalyserCheck || (Date.now() - window.lastMainAnalyserCheck) > 5000){
+          const maxMain = Math.max(...dataArray.map(Math.abs));
+          console.log(`[Audio] Main analyser max: ${maxMain.toFixed(6)} (${dataArray.length} samples)`);
+          if(maxMain === 0){
+            console.warn('⚠️ Main analyser also shows zero - audio device may not be sending signal');
+          }
+          window.lastMainAnalyserCheck = Date.now();
+        }
+      }
 
       lufsEl.textContent = stats.lufs.toFixed(1) + ' LUFS';
       document.getElementById('lufsM').textContent = stats.momentaryLufs.toFixed(1) + ' LUFS';
@@ -267,13 +395,20 @@
       rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
       peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
 
-      // Debug info
-      document.getElementById('sampleRms').textContent = stats.db.toFixed(1) + ' dBFS (' + stats.rmsLinear.toFixed(4) + ' lin)';
-      document.getElementById('bufWriteDebug').textContent = bufWrite;
-      document.getElementById('bufLenDebug').textContent = bufLen;
-      document.getElementById('rawPeakDebug').textContent = stats.peak.toFixed(4) + ' | Instant LUFS: ' + (10 * Math.log10(stats.rmsLinear * stats.rmsLinear)).toFixed(1);
-      document.getElementById('meanSqDebug').textContent = (stats.rmsLinear * stats.rmsLinear).toFixed(6) + ' | Block meanPower: ' + (window._debugLUFS?.meanPower || 0).toFixed(9);
-      document.getElementById('momBlocksDebug').textContent = momentaryBlocks.length + ' | Preliminary: ' + (window._debugLUFS?.preliminaryLUFS || 0).toFixed(1);
+      // Debug info with new metering data (optional elements)
+      const sampleRmsEl = document.getElementById('sampleRms');
+      if(sampleRmsEl) sampleRmsEl.textContent = stats.db.toFixed(1) + ' dBFS (' + stats.rmsLinear.toFixed(4) + ' lin)';
+      const bufWriteEl = document.getElementById('bufWriteDebug');
+      if(bufWriteEl) bufWriteEl.textContent = bufWrite;
+      const bufLenEl = document.getElementById('bufLenDebug');
+      if(bufLenEl) bufLenEl.textContent = bufLen;
+      const rawPeakEl = document.getElementById('rawPeakDebug');
+      if(rawPeakEl) rawPeakEl.textContent = 'Peak: ' + stats.peakDb.toFixed(1) + ' | Hold: ' + stats.holdDb.toFixed(1);
+      const meanSqEl = document.getElementById('meanSqDebug');
+      if(meanSqEl) meanSqEl.textContent = 'Raw Peak Linear: ' + stats.peak.toFixed(6) + ' | Hold Linear: ' + (Math.pow(10, stats.holdDb/20)).toFixed(6);
+      const blockCountText = meterEngine ? (' | Blocks: ' + meterEngine.getMetrics().blockCount) : '';
+      const momBlocksEl = document.getElementById('momBlocksDebug');
+      if(momBlocksEl) momBlocksEl.textContent = 'LUFS I: ' + stats.lufs.toFixed(1) + ' | LUFS M: ' + stats.momentaryLufs.toFixed(1) + ' | LUFS Peak: ' + stats.peakLufs.toFixed(1) + blockCountText;
 
       // update minimeter fills with smoothing and dB mapping (-60 dB -> 0, 0 dB -> 1)
       const now = audioCtx.currentTime || (Date.now()/1000);
@@ -296,8 +431,10 @@
 
       const rmsPct = mapDbToPct(smoothRms);
       const peakPct = mapDbToPct(smoothPeak);
-      document.querySelector('#rmsBar .fill').style.width = (rmsPct*100)+'%';
-      document.querySelector('#peakBar .fill').style.width = (peakPct*100)+'%';
+      const rmsBarFill = document.querySelector('#rmsBar .fill');
+      if(rmsBarFill) rmsBarFill.style.width = (rmsPct*100)+'%';
+      const peakBarFill = document.querySelector('#peakBar .fill');
+      if(peakBarFill) peakBarFill.style.width = (peakPct*100)+'%';
 
       drawWave(dataArray);
       requestAnimationFrame(tick);
@@ -527,6 +664,7 @@
   }
 
   function createLayoutEditor(){
+    if(!layoutListEl || !resetLayoutBtn || !saveLayoutBtn || !layoutPanel) return;
     layoutListEl.innerHTML = '';
     const conf = loadLayout() || { order: moduleDefs.map(m=>m.id), items: moduleDefs.map(m=>({id:m.id, visible:true, size:'size-medium'})) };
     conf.order.forEach(id=>{
@@ -618,11 +756,29 @@
     });
   }
 
-  openLayoutBtn.addEventListener('click', ()=>{ layoutPanel.classList.remove('hidden'); createLayoutEditor(); });
-  closeLayoutBtn.addEventListener('click', ()=>{ layoutPanel.classList.add('hidden'); });
+  openLayoutBtn && openLayoutBtn.addEventListener('click', ()=>{ layoutPanel.classList.remove('hidden'); createLayoutEditor(); });
+  closeLayoutBtn && closeLayoutBtn.addEventListener('click', ()=>{ layoutPanel.classList.add('hidden'); });
 
-  // apply saved layout on start
-  applyLayout(loadLayout());
+  // apply saved layout on start (only if one exists)
+  const savedLayout = loadLayout();
+  if(savedLayout) applyLayout(savedLayout);
+
+  // Initialize panel positions from data attributes
+  function initializePanelPositions(){
+    document.querySelectorAll('.panel-box').forEach(panel => {
+      const x = panel.getAttribute('data-x');
+      const y = panel.getAttribute('data-y');
+      const w = panel.getAttribute('data-w');
+      const h = panel.getAttribute('data-h');
+      if(x !== null) panel.style.left = x + 'px';
+      if(y !== null) panel.style.top = y + 'px';
+      if(w !== null) panel.style.width = w + 'px';
+      if(h !== null) panel.style.height = h + 'px';
+    });
+  }
+  
+  // Initialize panels on page load
+  initializePanelPositions();
 
   // auto-log devices on each enumeration to main process
   const originalListDevices = listDevices;
@@ -634,77 +790,146 @@
     }catch(e){ console.warn('Could not enumerate devices for logging', e); }
   };
 
-  // compute statistics and a closer approximation to LUFS using block gating
   function computeStatsAndLUFS(floatData){
-    // instant stats
-    let sum = 0; let peak = 0;
-    for(let i=0;i<floatData.length;i++){
-      const v = floatData[i]; sum += v*v; if(Math.abs(v) > peak) peak = Math.abs(v);
-    }
-    const meanSquare = sum/floatData.length || 1e-12;
-    const rms = Math.sqrt(meanSquare);
-    const db = 20 * Math.log10(rms + 1e-12);
-    const peakDb = 20 * Math.log10(peak + 1e-12);
-
-    // build 400ms block list from circular buffer for integrated loudness
-    const blockSize = Math.floor(sampleRate * 0.4);
-    const totalBlocks = Math.floor(bufLen / blockSize) || 1;
-    const powers = [];
-    // read oldest to newest
-    let readIdx = (bufWrite + 1) % bufLen; // approximate oldest sample
-    for(let b=0;b<totalBlocks;b++){
-      let s = 0;
-      // Use main mono buffer (which now has all samples from dataArray)
-      for(let i=0;i<blockSize;i++){
-        const x = buffer[readIdx] || 0;
-        s += x*x;
-        readIdx = (readIdx + 1) % bufLen;
+    // ====== PEAK (RAW, PRE-WEIGHTING) ======
+    let rawPeakL = 0, rawPeakR = 0;
+    // Use available channel data
+    if(leftArray && leftArray.length > 0){
+      for(let i=0;i<leftArray.length;i++){
+        rawPeakL = Math.max(rawPeakL, Math.abs(leftArray[i]||0));
       }
-      s = s / blockSize;
-      powers.push(s + 1e-18);
     }
-
-    // If EBUR128 WASM is available and initialized, prefer its integrated LUFS
-    try{
-      if(window.EBUR128 && ebInited && typeof window.EBUR128.getIntegrated === 'function'){
-        const wasmLufs = window.EBUR128.getIntegrated();
-        return {rms, db, peak, peakDb, lufs: wasmLufs, momentaryLufs, peakLufs, rmsLinear: rms, peak};
+    if(rightArray && rightArray.length > 0){
+      for(let i=0;i<rightArray.length;i++){
+        rawPeakR = Math.max(rawPeakR, Math.abs(rightArray[i]||0));
       }
-    }catch(e){ console.warn('EBUR128 getIntegrated failed', e); }
-
-    // preliminary integrated (ungated)
-    const meanPower = powers.reduce((a,c)=>a+c,0)/powers.length;
-    const preliminaryLUFS = 10 * Math.log10(meanPower + 1e-18);
-
-    // Store for debug
-    window._debugLUFS = {meanPower, preliminaryLUFS, numBlocks: powers.length, blockSize, firstPower: powers[0]};
-
-    // gating per ITU idea (approx): absolute gate = -70 LUFS, relative gate = preliminary -10 dB
-    const absoluteGateLinear = Math.pow(10, -70.0/10.0); // -70 LUFS absolute gate
-    const relativeGateLinear = Math.pow(10, (preliminaryLUFS - 10.0)/10.0);
-    const gateThreshold = Math.max(absoluteGateLinear, relativeGateLinear);
-
-    const gated = powers.filter(p=>p >= gateThreshold);
-    const used = gated.length ? gated : powers; // if gate excludes all, fall back
-    const finalMean = used.reduce((a,c)=>a+c,0)/used.length;
-    const lufs = 10 * Math.log10(finalMean + 1e-18);
-
-    // momentary LUFS: last 3 seconds (~8 blocks, no gating per ITU-R BS.1770-4)
-    momentaryBlocks.push(...powers);
-    if(momentaryBlocks.length > momentaryBlockCount){
-      momentaryBlocks = momentaryBlocks.slice(-momentaryBlockCount);
     }
-    if(momentaryBlocks.length > 0){
-      const momentaryMean = momentaryBlocks.reduce((a,c)=>a+c,0)/momentaryBlocks.length;
-      momentaryLufs = 10 * Math.log10(momentaryMean + 1e-18);
+    const rawPeak = Math.max(rawPeakL, rawPeakR);
+    samplePeakInstant = rawPeak;
+    if(rawPeak > samplePeakHold) samplePeakHold = rawPeak;
+
+    const peakDb = 20 * Math.log10(Math.max(rawPeak, 1e-12));
+    const holdDb = 20 * Math.log10(Math.max(samplePeakHold, 1e-12));
+
+    // ====== RMS (RAW, PRE-WEIGHTING, STEREO ENERGY AVERAGED) ======
+    let sumSqL = 0, sumSqR = 0, nL = 0, nR = 0;
+    if(leftArray && leftArray.length > 0){
+      for(let i=0;i<leftArray.length;i++){
+        const l = leftArray[i] || 0;
+        sumSqL += l * l;
+        nL++;
+      }
+    }
+    if(rightArray && rightArray.length > 0){
+      for(let i=0;i<rightArray.length;i++){
+        const r = rightArray[i] || 0;
+        sumSqR += r * r;
+        nR++;
+      }
+    }
+    const meanSqL = nL > 0 ? sumSqL / nL : 0;
+    const meanSqR = nR > 0 ? sumSqR / nR : 0;
+    const meanSqCombined = (meanSqL + meanSqR) / 2.0;
+    const rms = Math.sqrt(meanSqCombined);
+    const rmsDb = 20 * Math.log10(Math.max(rms, 1e-12));
+
+    // ====== LUFS (K-WEIGHTED, BLOCK-BASED, WITH GATING) ======
+    // Only process if we have valid stereo data
+    if(leftArray && rightArray && leftArray.length > 0 && rightArray.length > 0){
+      const minLen = Math.min(leftArray.length, rightArray.length);
+      for(let i=0;i<minLen;i++){
+        const l = leftArray[i] || 0;
+        const r = rightArray[i] || 0;
+        const kL = applyKWeight(l, false);
+        const kR = applyKWeight(r, true);
+        
+        // Energy of single sample (sum of squares, then average channels)
+        const E_i = (kL*kL + kR*kR) / 2.0;
+        
+        if(lufsBlockIdx < blockSamples){
+          lufsBlockBuffer[lufsBlockIdx] = E_i;
+          lufsBlockIdx++;
+        }
+
+        // When block is full, compute block loudness and store
+        if(lufsBlockIdx >= blockSamples && blockSamples > 0){
+          const blockSumEnergy = lufsBlockBuffer.reduce((a,e)=>a+e,0);
+          const blockMeanEnergy = blockSumEnergy / blockSamples;
+          
+          // Only push valid energy values
+          if(blockMeanEnergy > 0 && isFinite(blockMeanEnergy)){
+            lufsBlocks.push(blockMeanEnergy);
+          }
+          
+          lufsBlockBuffer = new Float32Array(blockSamples);
+          lufsBlockIdx = 0;
+        }
+      }
     }
 
-    // peak LUFS: track maximum LUFS value
-    if(lufs > peakLufs){
-      peakLufs = lufs;
+    // ====== MOMENTARY LUFS (400 ms, UNGATED) ======
+    let momentaryLufs = -120;
+    if(lufsBlocks.length > 0){
+      const lastBlockEnergy = lufsBlocks[lufsBlocks.length - 1];
+      if(lastBlockEnergy > 0 && isFinite(lastBlockEnergy)){
+        momentaryLufs = -0.691 + 10 * Math.log10(lastBlockEnergy + 1e-15);
+        if(!isFinite(momentaryLufs)) momentaryLufs = -120;
+      }
     }
 
-    return {rms, db, peak, peakDb, lufs, momentaryLufs, peakLufs, rmsLinear: rms, peak};
+    // ====== INTEGRATED LUFS (ALL TIME, WITH GATING) ======
+    let integratedLufs = -120;
+    if(lufsBlocks.length > 0){
+      // Preliminary integrated (ungated)
+      const sumEnergy = lufsBlocks.reduce((a,e)=>a+e,0);
+      const meanUnGated = sumEnergy / lufsBlocks.length;
+      
+      if(meanUnGated > 0 && isFinite(meanUnGated)){
+        const prelim = -0.691 + 10 * Math.log10(meanUnGated + 1e-15);
+
+        // Absolute gate: keep only blocks > -70 LUFS
+        const absoluteGateThreshold = Math.pow(10, (-0.691 - 70.0) / 10.0);
+        const blocksAbsGate = lufsBlocks.filter(e => e > absoluteGateThreshold);
+
+        // Relative gate
+        let finalBlocks = lufsBlocks;
+        if(blocksAbsGate.length > 0){
+          const sumAbsGated = blocksAbsGate.reduce((a,e)=>a+e,0);
+          const meanAbsGated = sumAbsGated / blocksAbsGate.length;
+          const absGatedLufs = -0.691 + 10 * Math.log10(meanAbsGated + 1e-15);
+          const relativeThresholdLufs = absGatedLufs - 10.0;
+          const relativeThresholdEnergy = Math.pow(10, (relativeThresholdLufs + 0.691) / 10.0);
+          const gatedBlocks = lufsBlocks.filter(e => e > relativeThresholdEnergy);
+          finalBlocks = gatedBlocks.length > 0 ? gatedBlocks : blocksAbsGate;
+        }
+
+        if(finalBlocks.length > 0){
+          const sumFinal = finalBlocks.reduce((a,e)=>a+e,0);
+          const meanFinal = sumFinal / finalBlocks.length;
+          if(meanFinal > 0 && isFinite(meanFinal)){
+            integratedLufs = -0.691 + 10 * Math.log10(meanFinal + 1e-15);
+            if(!isFinite(integratedLufs)) integratedLufs = -120;
+          }
+        }
+      }
+    }
+
+    // ====== PEAK LUFS (MAX BLOCK LUFS) ======
+    let peakLufsValue = -120;
+    if(lufsBlocks.length > 0){
+      const validLufs = lufsBlocks
+        .map(e => (e > 0 && isFinite(e)) ? (-0.691 + 10 * Math.log10(e + 1e-15)) : -120)
+        .filter(v => isFinite(v) && v > -200);
+      if(validLufs.length > 0){
+        peakLufsValue = Math.max(...validLufs);
+      }
+    }
+
+    return {
+      rms, db: rmsDb, peak: rawPeak, peakDb,
+      lufs: integratedLufs, momentaryLufs, peakLufs: peakLufsValue,
+      rmsLinear: rms, holdDb
+    };
   }
 
   await listDevices();
@@ -714,7 +939,8 @@
     if(!audioCtx) start();
   });
 
-  document.getElementById('logDebugInfo').addEventListener('click', ()=>{
+  const logDebugBtn = document.getElementById('logDebugInfo');
+  if(logDebugBtn) logDebugBtn.addEventListener('click', ()=>{
     console.log('=== AUDIO DEBUG INFO ===');
     console.log('Sample Rate:', sampleRate);
     console.log('Buffer Length (samples):', bufLen);
@@ -724,11 +950,30 @@
       console.log('AudioContext Sample Rate:', audioCtx.sampleRate);
     }
     console.log('Current LUFS values:', {
-      integrated: momentaryLufs,
-      momentary: momentaryLufs,
-      peak: peakLufs
+      integrated: lufsBlocks.length > 0 ? 'computed' : '—',
+      momentary: 'see UI',
+      peak: 'see UI'
     });
   });
+
+  // Reset button handlers
+  const resetLufsBtn = document.getElementById('resetLufs');
+  if(resetLufsBtn){
+    resetLufsBtn.addEventListener('click', ()=>{
+      lufsBlocks = [];
+      lufsBlockBuffer = new Float32Array(blockSamples);
+      lufsBlockIdx = 0;
+      console.log('LUFS state reset');
+    });
+  }
+
+  const resetPeakBtn = document.getElementById('resetPeak');
+  if(resetPeakBtn){
+    resetPeakBtn.addEventListener('click', ()=>{
+      samplePeakHold = -Infinity;
+      console.log('Peak hold reset');
+    });
+  }
 
   // theme and prefs handling
   function loadSettings(){

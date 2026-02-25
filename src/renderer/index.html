@@ -17,8 +17,7 @@
         <button id="start">Start</button>
         <button id="openDevtools">DevTools</button>
         <button id="openDevicePanel">Devices</button>
-        <button id="openLayout">Edit Layout</button>
-        <button id="logDebugInfo">Log Debug</button>
+        <button id="toggleMinimode">Minimode</button>
       </div>
       <div class="prefs">
         <label for="themeSelect">Theme</label>
@@ -26,99 +25,133 @@
           <option value="ps2">PS2 Retro Color</option>
           <option value="neon">Neon</option>
         </select>
+        <label class="gain">
+          Input Trim
+          <input type="range" id="inputGain" min="-30" max="30" step="0.5" value="0" />
+          <span id="inputGainVal">0.0 dB</span>
+        </label>
+        <label class="auto" title="Apply ITU-R BS.1770 K-weight filter"><input type="checkbox" id="kWeightToggle"/> K-weighting</label>
         <label class="auto"><input type="checkbox" id="autoStart"/> Auto Start</label>
       </div>
+      <div id="deviceStatus" class="device-status">Device: — | Rate: —</div>
     </header>
 
-    <section class="meters">
-      <div class="meter">
-        <div class="label">Integrated LUFS</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div id="lufs" class="value">—</div>
-          <div id="wasmStatus" class="wasm-status">WASM: —</div>
+    <div id="workspace" class="workspace">
+      <div class="panel-box" data-panel-id="panel-lufs" data-x="20" data-y="20" data-w="520" data-h="170">
+        <div class="panel-title">LUFS Meters</div>
+        <div class="panel-body">
+          <section class="meters">
+            <div class="meter">
+              <div class="label" title="Integrated loudness with gating">Integrated LUFS</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div id="lufs" class="value">—</div>
+                <div id="wasmStatus" class="wasm-status">WASM: —</div>
+                <button id="resetLufs" class="reset">Reset</button>
+              </div>
+            </div>
+            <div class="meter">
+              <div class="label" title="Momentary loudness (400 ms)">Momentary LUFS (400 ms)</div>
+              <div id="lufsM" class="value">—</div>
+            </div>
+            <div class="meter">
+              <div class="label" title="Highest LUFS since reset">Peak LUFS</div>
+              <div id="lufsS" class="value">—</div>
+            </div>
+          </section>
+          <div id="signalFlow" class="signal-flow">Input -> Trim -> <span id="kWeightLabel">K-weight</span> -> LUFS</div>
         </div>
+        <div class="resize-handle"></div>
       </div>
-      <div class="meter">
-        <div class="label">Momentary LUFS (3s)</div>
-        <div id="lufsM" class="value">—</div>
-      </div>
-      <div class="meter">
-        <div class="label">Peak LUFS</div>
-        <div id="lufsS" class="value">—</div>
-      </div>
-    </section>
 
-    <section class="meters">
-      <div class="meter">
-        <div class="label">RMS (dBFS)</div>
-        <div id="rms" class="value">—</div>
-      </div>
-      <div class="meter">
-        <div class="label">Peak (dBFS)</div>
-        <div id="peak" class="value">—</div>
-      </div>
-      <div class="meter">
-        <div class="label">Instant Sample RMS</div>
-        <div id="sampleRms" class="value">—</div>
-      </div>
-    </section>
-
-    <section class="debug">
-      <div style="font-size:9px;color:#888">
-        <div>Buffer Write: <span id="bufWriteDebug">0</span> / <span id="bufLenDebug">0</span></div>
-        <div>Raw Sample Peak: <span id="rawPeakDebug">0</span></div>
-        <div>Mean-Square: <span id="meanSqDebug">0</span></div>
-        <div>Momentary Blocks: <span id="momBlocksDebug">0</span></div>
-      </div>
-    </section>
-
-    <section class="minimeters">
-      <div class="mini">
-        <div class="mini-label">RMS</div>
-        <div class="mini-bar" id="rmsBar"><div class="fill"></div></div>
-      </div>
-      <div class="mini">
-        <div class="mini-label">Peak</div>
-        <div class="mini-bar" id="peakBar"><div class="fill"></div></div>
-      </div>
-    </section>
-
-    <!-- device debug moved to modal/panel -->
-
-    <canvas id="wave" width="512" height="128"></canvas>
-    <div class="visual-row">
-      <div class="visual-left">
-        <canvas id="vectorscope" width="256" height="256"></canvas>
-      </div>
-      <div class="visual-right">
-        <div class="corr">
-          <div class="label">Stereo Correlation</div>
-          <div id="corrVal">—</div>
+      <div class="panel-box" data-panel-id="panel-levels" data-x="560" data-y="20" data-w="380" data-h="200">
+        <div class="panel-title">Levels</div>
+        <div class="panel-body">
+          <section class="meters">
+            <div class="meter">
+              <div class="label" title="Root-mean-square level">RMS (dBFS)</div>
+              <div id="rms" class="value">—</div>
+            </div>
+            <div class="meter">
+              <div class="label" title="Peak sample level">Peak (dBFS)</div>
+              <div id="peak" class="value">—</div>
+              <div class="meter-sub">
+                <span>Hold:</span> <span id="peakHold">—</span>
+                <span id="clipLed" class="clip-led" title="Clip indicator">●</span>
+              </div>
+              <button id="resetPeak" class="reset">Reset Peak</button>
+            </div>
+          </section>
         </div>
+        <div class="resize-handle"></div>
       </div>
-    </div>
-    <section class="more-visuals">
-      <div class="vis-col">
-        <div class="vis-block">
-          <div class="vis-title">Oscilloscope</div>
+
+      <div class="panel-box canvas-panel" data-panel-id="panel-wave" data-x="20" data-y="220" data-w="740" data-h="220">
+        <div class="panel-title">Waveform</div>
+        <div class="panel-body">
+          <canvas id="wave" width="512" height="128"></canvas>
+        </div>
+        <div class="resize-handle"></div>
+      </div>
+
+      <div class="panel-box" data-panel-id="panel-vectorscope" data-x="780" data-y="220" data-w="440" data-h="260">
+        <div class="panel-title">Vectorscope</div>
+        <div class="panel-body">
+          <div class="visual-row">
+            <div class="visual-left scope-wrap">
+              <canvas id="vectorscope" width="256" height="256"></canvas>
+              <div class="scope-control">
+                <label class="label" for="vsPulseShape">Pulse</label>
+                <select id="vsPulseShape">
+                  <option value="polygon">Polygon</option>
+                  <option value="pyramid">Pyramid</option>
+                  <option value="hearts">Hearts</option>
+                  <option value="star">Star</option>
+                  <option value="hexagon">Hexagon</option>
+                  <option value="spiral">Spiral</option>
+                </select>
+              </div>
+              <div class="corr corr-overlay">
+                <div class="label">Stereo Correlation</div>
+                <div id="corrVal">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="resize-handle"></div>
+      </div>
+
+      <div class="panel-box canvas-panel" data-panel-id="panel-osc" data-x="20" data-y="470" data-w="580" data-h="200">
+        <div class="panel-title">Oscilloscope</div>
+        <div class="panel-body">
           <canvas id="osc" width="800" height="160"></canvas>
         </div>
-        <div class="vis-block">
-          <div class="vis-title">Spectrogram</div>
+        <div class="resize-handle"></div>
+      </div>
+
+      <div class="panel-box canvas-panel" data-panel-id="panel-specgram" data-x="620" data-y="470" data-w="580" data-h="200">
+        <div class="panel-title">Spectrogram</div>
+        <div class="panel-body">
           <canvas id="specgram" width="800" height="160"></canvas>
         </div>
+        <div class="resize-handle"></div>
       </div>
-      <div class="vis-col">
-        <div class="vis-block">
-          <div class="vis-title">Spectrograph</div>
+
+      <div class="panel-box canvas-panel" data-panel-id="panel-specgraph" data-x="20" data-y="690" data-w="580" data-h="220">
+        <div class="panel-title">Spectrograph</div>
+        <div class="panel-body">
           <canvas id="specgraph" width="300" height="320"></canvas>
         </div>
-        <div class="vis-block">
-          <div class="vis-title">Goniometer</div>
+        <div class="resize-handle"></div>
+      </div>
+
+      <div class="panel-box canvas-panel" data-panel-id="panel-goniometer" data-x="620" data-y="690" data-w="580" data-h="220">
+        <div class="panel-title">Goniometer</div>
+        <div class="panel-body">
           <canvas id="goniometer" width="300" height="320"></canvas>
         </div>
+        <div class="resize-handle"></div>
       </div>
-    </section>
+    </div>
   </div>
 
   <div id="devicePanel" class="panel hidden">
@@ -129,19 +162,24 @@
     </div>
   </div>
 
-  <div id="layoutPanel" class="panel hidden">
+  <div id="firstRun" class="panel hidden">
     <div class="panel-inner">
-      <button id="closeLayoutPanel" class="close">Close</button>
-      <h3>Layout Editor</h3>
-      <div id="layoutList"></div>
+      <h3>Quick Start</h3>
+      <div class="first-run">
+        <div>1) Choose your input device (ex: 828, BlackHole).</div>
+        <div>2) Click Start and play audio.</div>
+        <div>3) Use Input Trim to match levels.</div>
+        <div>4) Compare Momentary LUFS with other meters.</div>
+      </div>
+      <label class="auto" style="margin-top:8px"><input type="checkbox" id="dontShowAgain"/> Do not show again</label>
       <div style="margin-top:10px">
-        <button id="resetLayout">Reset Layout</button>
-        <button id="saveLayout">Save Layout</button>
+        <button id="closeFirstRun">Got it</button>
       </div>
     </div>
   </div>
 
   <script src="wasmLoader.js"></script>
+  <script src="meter-engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
