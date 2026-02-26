@@ -104,11 +104,10 @@ class BassCarPanel {
     this.wheelTilt = 0;
     this.wheelTiltVel = 0;
     
-    // Physics params (spring constants for visible snap)
-    this.suspensionStiffness = 180;
-    this.suspensionDamping = 24;
-    this.squashStiffness = 200;
-    this.squashDamping = 28;
+    // Physics params (critically damped springs for snappy motion)
+    this.suspensionStiffness = 220;  // Stiffer for punchier bounce
+    this.suspensionDamping = 22;     // Less damping for bigger oscillation
+    this.wheelHopAmount = 0;         // Wheel hop from suspension
     this.wheelTiltStiffness = 140;
     this.wheelTiltDamping = 20;
     this.baseRoadSpeed = 1.0;
@@ -120,12 +119,21 @@ class BassCarPanel {
     // Timing
     this.lastNow = performance.now();
     this.boomFlashUntil = 0;
+    this.lastBoomTime = 0;
+    
+    // VFX state (preallocated, no per-frame objects)
+    this.shockwaveRadius = 0;        // Expanding ring on boom
+    this.dustPuffLife = 0;           // Dust cloud opacity
+    this.headlightFlare = 0;         // Headlight glow on boom
     
     // Cached shapes (rebuilt on resize/theme change)
     this.carBody = null;
     this.carWindows = null;
     this.carWheelArches = null;
+    this.carRoofRack = null;
+    this.carDoors = null;
     this.roadTile = null;
+    this.mountainsPath = null;
     this.lastThemeVersion = -1;
     
     // Draw rect
@@ -228,15 +236,24 @@ class BassCarPanel {
   }
   
   /**
-   * Trigger BOOM impulse (always produce visible motion)
+   * Trigger BOOM impulse (strong, visible motion)
    */
   _triggerBoom(strength) {
-    // Impact scale - car expands outward when bass hits (DRAMATIC)
-    this.impactScale = 0.80 * this.shakeIntensity; // Will make car 80% bigger
+    // Suspension impulse (upward rebound from impact)
+    this.suspensionVel -= 500 * this.shakeIntensity;
     
-    // Camera shake (always add some)
-    this.cameraShakeX += (Math.random() - 0.5) * 6 * this.shakeIntensity;
-    this.cameraShakeY += (Math.random() - 0.5) * 4 * this.shakeIntensity;
+    // Body squash + stretch
+    this.bodySquash = Math.min(this.bodySquash + 0.22 * this.shakeIntensity, 0.35);
+    
+    // Camera shake
+    this.cameraShakeX += (Math.random() - 0.5) * 10 * this.shakeIntensity;
+    this.cameraShakeY += (Math.random() - 0.5) * 6 * this.shakeIntensity;
+    
+    // VFX: Shockwave ring expands from car
+    this.shockwaveRadius = 1;
+    this.dustPuffLife = 1.0;
+    this.headlightFlare = 1.0;
+    this.lastBoomTime = performance.now();
     
     // Road speed burst
     this.roadSpeed = this.baseRoadSpeed * (1 + strength * 2) * this.speedMultiplier;
@@ -257,14 +274,17 @@ class BassCarPanel {
     this.suspensionVel += suspAccel * dtSec;
     this.suspensionY += this.suspensionVel * dtSec;
     
+    // Wheel hop follows suspension with slight delay (0.6 multiplier)
+    this.wheelHopAmount = this.suspensionY * 0.6;
+    
     // Decay floor to prevent jitter
-    if (Math.abs(this.suspensionY) < 0.05 && Math.abs(this.suspensionVel) < 0.05) {
+    if (Math.abs(this.suspensionY) < 0.1 && Math.abs(this.suspensionVel) < 0.1) {
       this.suspensionY = 0;
       this.suspensionVel = 0;
     }
     
-    // Impact scale decay (car shrinks back to normal)
-    this.impactScale *= 0.92;
+    // Body squash natural decay
+    this.bodySquash *= 0.88;
     
     // Wheel tilt wobble - units: deg, deg/sec
     const tiltAccel = (-this.wheelTiltStiffness * this.wheelTilt) - (this.wheelTiltDamping * this.wheelTiltVel);
@@ -285,7 +305,13 @@ class BassCarPanel {
     this.roadScroll += this.roadSpeed * dtSec * 100;
     
     // Glow decay
-    this.glowPulse *= 0.92;
+    this.glowPulse *= 0.86;
+    
+    // VFX decays
+    this.shockwaveRadius *= 1.15; // Expand ring
+    if (this.shockwaveRadius > 3) this.shockwaveRadius = 0;
+    this.dustPuffLife *= 0.92; // Fade dust
+    this.headlightFlare *= 0.88; // Fade flare
   }
   
   /**
@@ -387,9 +413,10 @@ class BassCarPanel {
     // Car position with suspension bounce
     ctx.translate(this.carX, this.carY + this.suspensionY);
     
-    // Impact scale - car grows bigger when bass hits
-    const carScale = 1 + this.impactScale;
-    ctx.scale(carScale, carScale);
+    // Body squash/stretch (compress vertically, expand horizontally)
+    const squashY = 1 - this.bodySquash;
+    const squashX = 1 + this.bodySquash * 0.25;
+    ctx.scale(squashX, squashY);
     
     // Wheel tilt
     ctx.rotate(this.wheelTilt * Math.PI / 180);
@@ -427,9 +454,10 @@ class BassCarPanel {
     ctx.fillStyle = colors.bgInset;
     ctx.fill(this.carWheelArches);
     
-    // Wheels (rotating spokes)
-    this._drawWheel(this.wheelLeft, this.wheelY, this.wheelRadius);
-    this._drawWheel(this.wheelRight, this.wheelY, this.wheelRadius);
+    // Wheels (rotating spokes) - with hop from suspension
+    const wheelYWithHop = this.wheelY + this.wheelHopAmount;
+    this._drawWheel(this.wheelLeft, wheelYWithHop, this.wheelRadius);
+    this._drawWheel(this.wheelRight, wheelYWithHop, this.wheelRadius);
     
     // Headlights glow (with boom pulse)
     if (this.glowPulse > 0.01) {
@@ -448,6 +476,37 @@ class BassCarPanel {
     ctx.fillRect(this.carW * 0.48, -this.carH * 0.15, 4, 8);
     ctx.fillRect(this.carW * 0.48, this.carH * 0.07, 4, 8);
     ctx.globalAlpha = 1;
+    
+    // VFX: Shockwave ring expanding from car on boom
+    if (this.shockwaveRadius > 0 && this.shockwaveRadius < 3) {
+      ctx.strokeStyle = colors.accentA;
+      ctx.globalAlpha = (1 - this.shockwaveRadius / 3) * 0.6;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, this.carH * 0.3, this.carW * this.shockwaveRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    
+    // VFX: Dust puff behind rear wheel on boom
+    if (this.dustPuffLife > 0) {
+      ctx.fillStyle = colors.grid;
+      ctx.globalAlpha = this.dustPuffLife * 0.2;
+      ctx.beginPath();
+      ctx.arc(this.wheelRight + 8, this.wheelY + this.carH * 0.1, this.carW * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    
+    // VFX: Headlight flare on boom
+    if (this.headlightFlare > 0.01) {
+      const flareAlpha = this.headlightFlare * 0.4;
+      const [ar, ag, ab] = UIHelpers._parseRGB(colors.accentA);
+      ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, ${flareAlpha})`;
+      ctx.beginPath();
+      ctx.arc(-this.carW * 0.45, 0, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
     
     ctx.restore();
   }
@@ -504,27 +563,39 @@ class BassCarPanel {
     const colors = THEME.colors;
     const m = this.lastMetrics;
     
-    ctx.font = THEME.fonts.monoSmall;
-    ctx.fillStyle = colors.textMuted;
+    // HUD background (subtle)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.fillRect(8, 8, w - 16, 28);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(8, 8, w - 16, 28);
+    
+    // Bass level indicator (left)
+    ctx.font = '12px monospace';
+    ctx.fillStyle = colors.text;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = 'middle';
+    const bassBar = Math.min(m.bassEnergy * 20, 40);
+    ctx.fillText(`BASS`, 12, 23);
+    ctx.fillStyle = colors.accentA;
+    ctx.fillRect(50, 20, bassBar, 6);
     
-    // Debug readout
-    const bass = m.bassEnergy.toFixed(3);
-    const transient = (m.bassEnergy - m.smoothEnergy).toFixed(3);
-    const boom = m.isBoom ? '1' : '0';
-    const impactScale = (1 + this.impactScale).toFixed(2);
-    const suspY = this.suspensionY.toFixed(1);
+    // Center frequency band
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${m.bandLo}–${m.bandHi}Hz`, w / 2, 23);
     
-    const debugText = `B:${bass} T:${transient} Boom:${boom} Scale:${impactScale} suspY:${suspY}`;
-    ctx.fillText(debugText, 8, 8);
-    
-    // Boom flash (bright indicator)
-    if (this.boomFlashUntil > Date.now()) {
+    // BOOM indicator (right)
+    if (m.isBoom || this.headlightFlare > 0.3) {
       ctx.fillStyle = colors.accentA;
-      ctx.font = 'bold 24px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('BOOM!', w * 0.5, h * 0.45);
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`◈ BOOM ◈`, w - 12, 23);
+    } else {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`—`, w - 12, 23);
     }
   }
   
