@@ -23,8 +23,11 @@
       <div class="prefs">
         <label for="themeSelect">Theme</label>
         <select id="themeSelect">
-          <option value="ps2">PS2 Retro Color</option>
-          <option value="neon">Neon</option>
+          <option value="ps2">PS2 Retro</option>
+          <option value="neon">Neon Arcade</option>
+          <option value="doom">Doom Prophet</option>
+          <option value="glitter">Glitter Apocalypse</option>
+          <option value="nuclear">Nuclear Terminal</option>
         </select>
         <label class="gain">
           Input Trim
@@ -36,6 +39,9 @@
       </div>
       <div id="deviceStatus" class="device-status">Device: — | Rate: —</div>
     </header>
+
+    <!-- Glitter underlay canvas (only active in Glitter Apocalypse theme) -->
+    <canvas id="glitterCanvas" class="glitter-underlay"></canvas>
 
     <div class="metersRow">
       <div class="panel-box" data-panel-id="panel-lufs">
@@ -218,6 +224,8 @@
   <script src="panel-base.js"></script>
   <script src="panels.js"></script>
   <script src="meters-simple.js"></script>
+  <script src="glitter-layer.js"></script>
+  <script src="bass-car-panel.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

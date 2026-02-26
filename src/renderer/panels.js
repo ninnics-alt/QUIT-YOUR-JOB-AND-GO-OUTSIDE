@@ -236,7 +236,8 @@ class OscilloscopePanel extends Panel {
     parentCtx.fillRect(this.x, contentY, this.width, contentH);
 
     // === STEP 1: Fade persistence buffer (phosphor decay) ===
-    this.persistenceCtx.fillStyle = `rgba(10, 14, 26, ${this.fadeAlpha})`;
+    const [r, g, b] = UIHelpers._parseRGB(colors.bgInset);
+    this.persistenceCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.fadeAlpha})`;
     this.persistenceCtx.fillRect(0, 0, this.persistenceCanvas.width, this.persistenceCanvas.height);
 
     // === STEP 2: Draw grid (cached if possible) ===
@@ -284,7 +285,8 @@ class OscilloscopePanel extends Panel {
 
     // Centerline
     const centerY = contentY + contentH / 2;
-    parentCtx.strokeStyle = `rgba(0,229,255,0.2)`;
+    const [gr, gg, gb] = UIHelpers._parseRGB(colors.accentA);
+    parentCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.2)`;
     parentCtx.lineWidth = 1;
     parentCtx.setLineDash([2, 2]);
     parentCtx.beginPath();
@@ -898,7 +900,8 @@ class VectorScopePanel extends Panel {
 
     // Fill
     const fillW = value * w;
-    ctx.fillStyle = `rgba(0,229,255,0.5)`;
+    const [fillr, fillg, fillb] = UIHelpers._parseRGB(colors.accentA);
+    ctx.fillStyle = `rgba(${fillr},${fillg},${fillb},0.5)`;
     ctx.fillRect(x, y, fillW, h);
 
     // Value label

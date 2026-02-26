@@ -65,6 +65,36 @@
   // Meter engine (loaded from meter-engine.js script tag)
   let meterEngine = null;
 
+  // Bass Car Panel (replaces waveform)
+  let bassCarPanel = null;
+
+  // Glitter underlay effect (only for GLITTER_APOCALYPSE theme)
+  const glitterCanvas = document.getElementById('glitterCanvas');
+  let glitterLayer = null;
+  if(glitterCanvas && window.GlitterLayer){
+    console.log('[Glitter] Canvas element:', glitterCanvas);
+    console.log('[Glitter] Canvas parent:', glitterCanvas.parentElement.tagName);
+    console.log('[Glitter] Canvas classList before:', glitterCanvas.className);
+    glitterLayer = new window.GlitterLayer(glitterCanvas);
+    console.log('[Glitter] Layer initialized:', glitterLayer);
+    
+    // Start independent animation loop for glitter (runs even without audio)
+    let lastGlitterTime = performance.now();
+    function glitterTick() {
+      if(glitterLayer && glitterLayer.isActive){
+        const now = performance.now();
+        const dt = (now - lastGlitterTime) / 1000; // convert to seconds
+        lastGlitterTime = now;
+        glitterLayer.tick(dt);
+        glitterLayer.draw();
+      }
+      requestAnimationFrame(glitterTick);
+    }
+    requestAnimationFrame(glitterTick);
+  } else {
+    console.warn('[Glitter] Not initialized - canvas:', !!glitterCanvas, 'GlitterLayer:', !!window.GlitterLayer);
+  }
+
   // Setup automatic canvas resizing with ResizeObserver
   function setupCanvasResizeObserver(canvas, onResizeCallback) {
     if(!canvas || !window.ResizeObserver) return;
@@ -95,7 +125,11 @@
   }
   
   // Register ResizeObservers for all canvases
-  const waveResizeObserver = setupCanvasResizeObserver(canvas);
+  const waveResizeObserver = setupCanvasResizeObserver(canvas, (w, h) => {
+    if(bassCarPanel && bassCarPanel.onResize) {
+      bassCarPanel.onResize(w, h);
+    }
+  });
   const specGraphResizeObserver = setupCanvasResizeObserver(specGraphCanvas);
   const goniResizeObserver = setupCanvasResizeObserver(goniCanvas);
   
@@ -120,6 +154,43 @@
     }
   });
   
+  // Listen for theme changes and clear all offscreen buffers
+  window.addEventListener('themeChanged', () => {
+    // Clear vectorscope buffer
+    if (vsBuffer && vsBufCtx) {
+      vsBufCtx.clearRect(0, 0, vsBuffer.width, vsBuffer.height);
+    }
+    
+    // Clear spectrogram buffer
+    if (specBuf && specBufCtx) {
+      specBufCtx.clearRect(0, 0, specBuf.width, specBuf.height);
+    }
+    
+    // Clear oscilloscope persistence buffer if it exists
+    if (oscPanel && oscPanel.persistBuffer) {
+      const ctx = oscPanel.persistBuffer.getContext('2d');
+      ctx && ctx.clearRect(0, 0, oscPanel.persistBuffer.width, oscPanel.persistBuffer.height);
+    }
+
+    // Enable/disable glitter effect based on theme
+    if(glitterLayer){
+      const isGlitterTheme = (THEME.currentPalette === 'glitter');
+      console.log('[Glitter] Theme changed - palette:', THEME.currentPalette, 'isGlitter:', isGlitterTheme);
+      if(isGlitterTheme){
+        glitterLayer.start();
+        console.log('[Glitter] Started, isActive:', glitterLayer.isActive);
+      }else{
+        glitterLayer.stop();
+        console.log('[Glitter] Stopped');
+      }
+    }
+    
+    // Force a full redraw on next tick
+    requestAnimationFrame(() => {
+      // All panels will redraw with new colors in the next animation frame
+    });
+  });
+  
   // Special handling for oscilloscope - notify OscilloscopePanel on resize
   const oscResizeObserver = setupCanvasResizeObserver(oscCanvas, (w, h) => {
     if(oscPanel && oscPanel.onResize) {
@@ -127,8 +198,49 @@
     }
   });
 
+  // Setup glitter canvas with ResizeObserver
+  const glitterResizeObserver = setupCanvasResizeObserver(glitterCanvas, (w, h) => {
+    // Only resize if canvas is actually visible (has active class)
+    if(glitterCanvas && glitterCanvas.classList.contains('active')){
+      console.log('[Glitter] Canvas resized to', w, 'x', h, 'logical pixels');
+      if(glitterLayer && glitterLayer.resize) {
+        glitterLayer.resize(w, h);
+      }
+    }
+  });
+
+  // Force initial size for glitter canvas (in case ResizeObserver doesn't fire immediately)
+  if(glitterCanvas){
+    const dpr = window.devicePixelRatio || 1;
+    // Canvas is now a sibling of content, sized to match remaining content area below header
+    const headerEl = document.querySelector('header');
+    const appEl = document.getElementById('app');
+    const appRect = appEl.getBoundingClientRect();
+    const headerRect = headerEl.getBoundingClientRect();
+    
+    // Canvas dimensions: #app width x (remaining height below header)
+    const w = appRect.width;
+    const h = appRect.height - headerRect.height;
+    
+    glitterCanvas.width = Math.round(w * dpr);
+    glitterCanvas.height = Math.round(h * dpr);
+    // Also set CSS size and position
+    glitterCanvas.style.width = w + 'px';
+    glitterCanvas.style.height = h + 'px';
+    glitterCanvas.style.position = 'absolute';
+    glitterCanvas.style.top = headerRect.height + 'px';
+    glitterCanvas.style.left = '0';
+    glitterCanvas.style.pointerEvents = 'none';
+    glitterCanvas.style.zIndex = '0';
+    
+    console.log('[Glitter] Initial canvas size set to', glitterCanvas.width, 'x', glitterCanvas.height, 'physical pixels');
+    console.log('[Glitter] CSS size set to', w, 'x', h, 'logical pixels, top offset:', headerRect.height);
+    console.log('[Glitter] Canvas in DOM:', document.contains(glitterCanvas), 'display:', window.getComputedStyle(glitterCanvas).display);
+  }
+
   let audioCtx, analyser, dataArray, source, stream;
   let splitter, analyserL, analyserR, leftArray, rightArray;
+  let freqDataL, freqDataR; // Frequency data for Bass Car Panel
   let integratedPower = 1e-12;
   let kWeightNodeHead; // chain head after source for K-weighting
   let sampleRate = 48000;
@@ -273,13 +385,14 @@
 
   function drawWave(floatData){
     const w = canvas.clientWidth; const h = canvas.clientHeight;
-    ctx.fillStyle = 'rgba(8,2,32,0.45)';
+    const colors = THEME.colors;
+    ctx.fillStyle = colors.bgInset;
     ctx.fillRect(0,0,w,h);
 
     // gradient stroke
     const grad = ctx.createLinearGradient(0,0,w,0);
-    grad.addColorStop(0,'#ff6ec7');
-    grad.addColorStop(1,'#00e5ff');
+    grad.addColorStop(0, colors.accentA);
+    grad.addColorStop(1, colors.accentB);
     ctx.strokeStyle = grad;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -291,7 +404,8 @@
     ctx.stroke();
 
     // low-res pixel overlay
-    ctx.fillStyle = 'rgba(255,110,199,0.04)';
+    const [r, g, b] = UIHelpers._parseRGB(colors.accentA);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.04)`;
     for(let gx=0;gx<w;gx+=8){
       for(let gy=0;gy<h;gy+=8){
         if(Math.random() > 0.985) ctx.fillRect(gx,gy,6,6);
@@ -365,6 +479,17 @@
     analyserR = audioCtx.createAnalyser(); analyserR.fftSize = 1024;
     leftArray = new Float32Array(analyserL.fftSize);
     rightArray = new Float32Array(analyserR.fftSize);
+    freqDataL = new Float32Array(analyserL.frequencyBinCount);
+    freqDataR = new Float32Array(analyserR.frequencyBinCount);
+
+    // Initialize Bass Car Panel (replaces waveform)
+    if(window.BassCarPanel && canvas){
+      bassCarPanel = new window.BassCarPanel(canvas, analyserL, analyserR, sampleRate);
+      // Set initial size
+      const rect = canvas.getBoundingClientRect();
+      bassCarPanel.onResize(rect.width, rect.height);
+      console.log('[BassCarPanel] Initialized');
+    }
 
     // BYPASS K-WEIGHT FOR TESTING: connect source directly to analyser
     source.connect(analyser);
@@ -556,7 +681,16 @@
       const peakBarFill = document.querySelector('#peakBar .fill');
       if(peakBarFill) peakBarFill.style.width = (peakPct*100)+'%';
 
-      drawWave(dataArray);
+      // Render Bass Car Panel (with frequency data for bass detection)
+      if(bassCarPanel && freqDataL && freqDataR){
+        // Get frequency data for bass detection (reuse preallocated buffers)
+        analyserL.getFloatFrequencyData(freqDataL);
+        analyserR.getFloatFrequencyData(freqDataR);
+        bassCarPanel.render(freqDataL, freqDataR);
+      } else {
+        // Fallback to old waveform if panel not initialized
+        drawWave(dataArray);
+      }
       
       // NEW: Update and render MeterDisplay with live metrics
       if(meterDisplay){
@@ -676,14 +810,14 @@
     const radius = Math.max(1, Math.min(drawW, drawH) * 0.5 - pad);
 
     // Background
-    vsCtx.fillStyle = colors.bgSecondary || '#0f1429';
+    vsCtx.fillStyle = colors.bgSecondary || colors.bgPanel;
     vsCtx.fillRect(0, 0, w, h);
 
     // Reference grid
     const ringAlpha = detailLevel === 'high' ? 0.18 : (detailLevel === 'med' ? 0.12 : 0.07);
     vsCtx.save();
     vsCtx.globalAlpha = ringAlpha;
-    vsCtx.strokeStyle = colors.gridLight || '#1a1f3a';
+    vsCtx.strokeStyle = colors.gridLight || colors.border;
     vsCtx.lineWidth = 1;
     for(let r = 0.25; r <= 1.0; r += 0.25){
       vsCtx.beginPath();
@@ -693,7 +827,7 @@
     vsCtx.restore();
 
     // Axes and guides
-    vsCtx.strokeStyle = colors.accentBlue || '#00e5ff';
+    vsCtx.strokeStyle = colors.accentBlue || colors.accentA;
     vsCtx.lineWidth = 1.2;
     vsCtx.globalAlpha = 0.22;
     vsCtx.beginPath();
@@ -761,8 +895,10 @@
     if(vsStyle === 'phosphor'){
       // Fade persistence buffer
       vsBufCtx.globalCompositeOperation = 'source-over';
-      vsBufCtx.fillStyle = 'rgba(2,0,8,0.08)';
+      vsBufCtx.fillStyle = colors.bgInset;
+      vsBufCtx.globalAlpha = 0.08;
       vsBufCtx.fillRect(0, 0, vsBuffer.width, vsBuffer.height);
+      vsBufCtx.globalAlpha = 1;
 
       // Two-pass glow into persistence buffer (additive)
       vsBufCtx.globalCompositeOperation = 'lighter';
@@ -1118,11 +1254,12 @@
       // Fade persistence buffer
       if(this.persistence && this.style === 'phosphor') {
         const fadeAlpha = 0.08;
-        persistCtx.fillStyle = `rgba(4,2,12,${fadeAlpha})`;
+        const [r, g, b] = UIHelpers._parseRGB(THEME.colors.bgInset);
+        persistCtx.fillStyle = `rgba(${r},${g},${b},${fadeAlpha})`;
         persistCtx.fillRect(bufRect.x, bufRect.y, bufRect.w, bufRect.h);
       } else {
         // Clear background
-        ctx.fillStyle = 'rgba(4,2,12,0.95)';
+        ctx.fillStyle = THEME.colors.bgInset;
         ctx.fillRect(0, 0, w, h);
       }
       
@@ -1137,8 +1274,8 @@
         const startIdx = triggerIdx >= 0 ? triggerIdx : 0;
         
         if(this.style === 'phosphor') {
-          this.drawWaveformToBuffer(displayData.left, startIdx, '#ff6ec7', 0.7, persistCtx, bufRect);
-          this.drawWaveformToBuffer(displayData.right, startIdx, '#00e5ff', 0.7, persistCtx, bufRect);
+          this.drawWaveformToBuffer(displayData.left, startIdx, THEME.colors.accentA, 0.7, persistCtx, bufRect);
+          this.drawWaveformToBuffer(displayData.right, startIdx, THEME.colors.accentB, 0.7, persistCtx, bufRect);
           // Composite buffer to main canvas (clip to draw rect)
           ctx.save();
           ctx.beginPath();
@@ -1147,8 +1284,8 @@
           ctx.drawImage(this.persistBuffer, 0, 0, w, h);
           ctx.restore();
         } else {
-          this.drawWaveform(displayData.left, startIdx, '#ff6ec7', ctx, rect);
-          this.drawWaveform(displayData.right, startIdx, '#00e5ff', ctx, rect);
+          this.drawWaveform(displayData.left, startIdx, THEME.colors.accentA, ctx, rect);
+          this.drawWaveform(displayData.right, startIdx, THEME.colors.accentB, ctx, rect);
         }
         
         // Draw trigger marker
@@ -1158,7 +1295,7 @@
         const data = displayData.mono || displayData.side;
         const triggerIdx = this.findTrigger(data);
         const startIdx = triggerIdx >= 0 ? triggerIdx : 0;
-        const color = displayData.side ? '#ffaa00' : '#00ff88';
+        const color = displayData.side ? THEME.colors.accentWarn : THEME.colors.accentB;
         
         if(this.style === 'phosphor') {
           this.drawWaveformToBuffer(data, startIdx, color, 1.0, persistCtx, bufRect);
@@ -1177,7 +1314,8 @@
     }
     
     drawGrid(ctx, rect) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      const [r, g, b] = UIHelpers._parseRGB(THEME.colors.grid);
+      ctx.strokeStyle = `rgba(${r},${g},${b},0.25)`;
       ctx.lineWidth = 1;
       
       // Vertical divisions (10 divs)
@@ -1198,8 +1336,9 @@
         ctx.stroke();
       }
       
-      // Center lines (brighter)
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      //Center lines (brighter)
+      const [r2, g2, b2] = UIHelpers._parseRGB(THEME.colors.border);
+      ctx.strokeStyle = `rgba(${r2},${g2},${b2},0.4)`;
       ctx.beginPath();
       ctx.moveTo(rect.x, rect.y + rect.h / 2);
       ctx.lineTo(rect.x + rect.w, rect.y + rect.h / 2);
@@ -1313,8 +1452,8 @@
     drawTriggerMarker(ctx, rect) {
       const y = rect.y + (0.5 - this.triggerLevel * 0.45) * rect.h;
       
-      ctx.strokeStyle = '#ffff00';
-      ctx.fillStyle = '#ffff00';
+      ctx.strokeStyle = THEME.colors.accentWarn;
+      ctx.fillStyle = THEME.colors.accentWarn;
       ctx.lineWidth = 1;
       
       // Horizontal line at trigger level (right side)
@@ -1345,10 +1484,11 @@
       // Fade or clear
       if(this.persistence) {
         const fadeAlpha = 0.06;
-        persistCtx.fillStyle = `rgba(4,2,12,${fadeAlpha})`;
+        const [r, g, b] = UIHelpers._parseRGB(THEME.colors.bgInset);
+        persistCtx.fillStyle = `rgba(${r},${g},${b},${fadeAlpha})`;
         persistCtx.fillRect(bufRect.x, bufRect.y, bufRect.w, bufRect.h);
       } else {
-        ctx.fillStyle = 'rgba(4,2,12,0.95)';
+        ctx.fillStyle = THEME.colors.bgInset;
         ctx.fillRect(0, 0, w, h);
       }
       
@@ -1360,7 +1500,7 @@
       const step = Math.max(1, Math.floor(len / (rect.w * 2))); // Sample more for smoother curve
       
       if(this.style === 'dots' || this.style === 'phosphor') {
-        ctx.fillStyle = this.persistence ? '#00ff88' : '#00e5ff';
+        ctx.fillStyle = this.persistence ? THEME.colors.accentB : THEME.colors.accentA;
         const dotSize = this.style === 'phosphor' ? 2 : this.dotSize;
         
         for(let i = 0; i < len; i += step) {
@@ -1374,7 +1514,7 @@
         }
       } else {
         // Line or minmax
-        ctx.strokeStyle = '#00e5ff';
+        ctx.strokeStyle = THEME.colors.accentA;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         
@@ -1422,7 +1562,7 @@
         parts.push(`Balance: <span class="value">C</span>`);
       }
       
-      this.readoutEl.innerHTML = parts.join(' <span style="color:#333">|</span> ');
+      this.readoutEl.innerHTML = parts.join(' <span style="color:' + THEME.colors.grid + '">|</span> ');
     }
   }
   
@@ -1462,14 +1602,17 @@
     const w = specGraphCanvas.clientWidth, h = specGraphCanvas.clientHeight;
     const axisH = 18; // Reserve space for frequency axis at bottom
     const graphH = h - axisH; // Height for the actual graph
+    const colors = THEME.colors;
     
     // Clear background
-    specGraphCtx.fillStyle = 'rgba(4,2,12,0.3)'; 
+    specGraphCtx.fillStyle = colors.bgInset;
     specGraphCtx.fillRect(0,0,w,h);
     
     // Draw gridlines and dB markers (y-axis)
-    specGraphCtx.strokeStyle = 'rgba(100,100,150,0.15)';
-    specGraphCtx.fillStyle = 'rgba(150,150,200,0.6)';
+    const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
+    specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.3)`;
+    const [tr, tg, tb] = UIHelpers._parseRGB(colors.textMuted);
+    specGraphCtx.fillStyle = `rgba(${tr},${tg},${tb},0.8)`;
     specGraphCtx.font = '11px monospace';
     specGraphCtx.textAlign = 'right';
     specGraphCtx.textBaseline = 'middle';
@@ -1502,7 +1645,8 @@
     }
     
     // Draw frequency labels on x-axis (in the reserved space at bottom)
-    specGraphCtx.fillStyle = 'rgba(200,220,255,0.9)';
+    const [lbr, lbg, lbb] = UIHelpers._parseRGB(colors.text);
+    specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
     specGraphCtx.font = 'bold 11px monospace';
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
@@ -1521,7 +1665,8 @@
     }
     
     // Draw title
-    specGraphCtx.fillStyle = 'rgba(200,200,255,0.8)';
+    const [titr, titg, titb] = UIHelpers._parseRGB(colors.text);
+    specGraphCtx.fillStyle = `rgba(${titr},${titg},${titb},0.9)`;
     specGraphCtx.font = 'bold 13px sans-serif';
     specGraphCtx.textAlign = 'left';
     specGraphCtx.textBaseline = 'top';
@@ -1536,7 +1681,10 @@
 
   function drawGoniometer(L, R){
     const w = goniCanvas.clientWidth, h = goniCanvas.clientHeight; const cx = w/2, cy = h/2;
-    goniCtx.fillStyle = 'rgba(2,0,8,0.2)'; goniCtx.fillRect(0,0,w,h);
+    const colors = THEME.colors;
+    const [bgr, bgg, bgb] = UIHelpers._parseRGB(colors.bgInset);
+    goniCtx.fillStyle = `rgba(${bgr},${bgg},${bgb},0.25)`;
+    goniCtx.fillRect(0,0,w,h);
     // compute angle histogram
     const hist = new Array(36).fill(0);
     const len = Math.min(L.length, R.length);
@@ -1554,12 +1702,15 @@
       const r0 = 30; const r1 = 30 + ratio * (Math.min(cx,cy)-40);
       const x0 = cx + Math.cos(ang) * r0; const y0 = cy + Math.sin(ang) * r0;
       const x1 = cx + Math.cos(ang) * r1; const y1 = cy + Math.sin(ang) * r1;
-      goniCtx.strokeStyle = `rgba(0,229,255,${0.15 + ratio*0.7})`;
+      const [acr, acg, acb] = UIHelpers._parseRGB(colors.accentA);
+      goniCtx.strokeStyle = `rgba(${acr},${acg},${acb},${0.15 + ratio*0.7})`;
       goniCtx.lineWidth = 2;
       goniCtx.beginPath(); goniCtx.moveTo(x0,y0); goniCtx.lineTo(x1,y1); goniCtx.stroke();
     }
     // draw center marker
-    goniCtx.fillStyle = 'rgba(255,255,255,0.06)'; goniCtx.beginPath(); goniCtx.arc(cx,cy,3,0,Math.PI*2); goniCtx.fill();
+    const [cenr, ceng, cenb] = UIHelpers._parseRGB(colors.grid);
+    goniCtx.fillStyle = `rgba(${cenr},${ceng},${cenb},0.4)`;
+    goniCtx.beginPath(); goniCtx.arc(cx,cy,3,0,Math.PI*2); goniCtx.fill();
   }
 
   function computeCorrelation(L, R){
@@ -1986,21 +2137,24 @@
     localStorage.setItem('qyjo_settings', JSON.stringify(cur));
   }
 
-  function applyTheme(name){
-    document.documentElement.classList.remove('theme-ps2','theme-neon');
-    if(name === 'neon') document.documentElement.classList.add('theme-neon');
-    else document.documentElement.classList.add('theme-ps2');
-  }
-
+  // Apply theme using THEME.applyPalette
   // wire preference UI
   const initialSettings = loadSettings();
   themeSelect.value = initialSettings.theme || 'ps2';
   autoStartEl.checked = !!initialSettings.autoStart;
-  applyTheme(themeSelect.value);
+  THEME.applyPalette(themeSelect.value);
+
+  // Enable glitter effect if initial theme is glitter
+  if(glitterLayer && THEME.currentPalette === 'glitter'){
+    console.log('[Glitter] Initial theme is glitter, starting effect');
+    glitterLayer.start();
+  } else if(glitterLayer) {
+    console.log('[Glitter] Initial theme is', THEME.currentPalette, '- not starting glitter');
+  }
 
   themeSelect.addEventListener('change', ()=>{
     saveSettings({theme: themeSelect.value});
-    applyTheme(themeSelect.value);
+    THEME.applyPalette(themeSelect.value);
   });
 
   autoStartEl.addEventListener('change', ()=>{

@@ -45,19 +45,20 @@ class MeterDisplay {
     // Use current canvas client dimensions (CSS pixels)
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
+    const colors = THEME.colors;
     
     // Background
-    this.ctx.fillStyle = '#0a0e1a';
+    this.ctx.fillStyle = colors.bgPrimary;
     this.ctx.fillRect(0, 0, w, h);
     
     // Border
-    this.ctx.strokeStyle = '#00e5ff';
+    this.ctx.strokeStyle = colors.accentA;
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(0, 0, w, h);
     
     // Title - responsive font size
     const titleSize = Math.max(12, Math.min(16, h * 0.08));
-    this.ctx.fillStyle = '#e0e6ff';
+    this.ctx.fillStyle = colors.text;
     this.ctx.font = `bold ${titleSize}px monospace`;
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'top';
@@ -86,11 +87,11 @@ class MeterDisplay {
     
     meters.forEach(m => {
       // Card background
-      this.ctx.fillStyle = '#0f1429';
+      this.ctx.fillStyle = colors.bgPanel;
       this.ctx.fillRect(m.x, m.y, meterW, meterH);
       
       // Card border
-      this.ctx.strokeStyle = '#00e5ff';
+      this.ctx.strokeStyle = colors.accentA;
       this.ctx.lineWidth = 1;
       this.ctx.strokeRect(m.x, m.y, meterW, meterH);
       
@@ -99,14 +100,14 @@ class MeterDisplay {
       const valueSize = Math.max(14, Math.min(28, meterH * 0.35));
       
       // Label
-      this.ctx.fillStyle = '#a0a8c8';
+      this.ctx.fillStyle = colors.textMuted;
       this.ctx.font = `${labelSize}px monospace`;
       this.ctx.textAlign = 'left';
       this.ctx.textBaseline = 'top';
       this.ctx.fillText(m.label, m.x + 6, m.y + 4);
       
       // Value
-      this.ctx.fillStyle = '#00ff88';
+      this.ctx.fillStyle = colors.accentB;
       this.ctx.font = `bold ${valueSize}px monospace`;
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';

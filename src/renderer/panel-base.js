@@ -32,13 +32,24 @@ class Panel {
     
     // Cache for static elements
     this.cachedBackground = null;
+    this.cachedGradients = {};
+    this.cachedPatterns = {};
     this.isDirty = true;
+    
+    // Theme version tracking for cache invalidation
+    this.lastThemeVersion = -1;
   }
 
   /**
    * Render the entire panel (chrome + content)
    */
   render(parentCtx) {
+    // Check if theme has changed and invalidate caches
+    if (typeof THEME !== 'undefined' && THEME.version !== this.lastThemeVersion) {
+      this._invalidateThemeCaches();
+      this.lastThemeVersion = THEME.version;
+    }
+    
     // Header
     this._renderHeader(parentCtx);
     
@@ -50,6 +61,31 @@ class Panel {
     
     // Toolbar
     this._renderToolbar(parentCtx);
+  }
+  
+  /**
+   * Invalidate all theme-dependent caches
+   * @private
+   */
+  _invalidateThemeCaches() {
+    // Clear cached gradients and patterns
+    this.cachedGradients = {};
+    this.cachedPatterns = {};
+    this.cachedBackground = null;
+    
+    // Clear any offscreen/persistence canvases
+    if (this.persistBuffer) {
+      const ctx = this.persistBuffer.getContext('2d');
+      ctx && ctx.clearRect(0, 0, this.persistBuffer.width, this.persistBuffer.height);
+    }
+    
+    if (this.offscreenBuffer) {
+      const ctx = this.offscreenBuffer.getContext('2d');
+      ctx && ctx.clearRect(0, 0, this.offscreenBuffer.width, this.offscreenBuffer.height);
+    }
+    
+    // Mark panel as dirty for full redraw
+    this.isDirty = true;
   }
 
   /**
