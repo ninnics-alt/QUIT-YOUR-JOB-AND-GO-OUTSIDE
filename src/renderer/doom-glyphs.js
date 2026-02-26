@@ -54,9 +54,9 @@ const DoomGlyphs = {
     ctx.save();
 
     // --- Diagonal chevrons (45° lines) ---
-    ctx.strokeStyle = accentOrange;
-    ctx.lineWidth = 1.0;
-    ctx.globalAlpha = alpha * 0.8;
+    ctx.strokeStyle = accentRed;
+    ctx.lineWidth = 2.0;
+    ctx.globalAlpha = alpha * 1.2;
 
     const chevronSpacing = cellPx * 0.75;
     for (let ox = x - h; ox < x + w + h; ox += chevronSpacing) {
@@ -67,9 +67,9 @@ const DoomGlyphs = {
     }
 
     // --- Warning triangles (seeded RNG for consistency) ---
-    ctx.globalAlpha = alpha * 0.7;
+    ctx.globalAlpha = alpha * 1.0;
     ctx.strokeStyle = accentRed;
-    ctx.lineWidth = 0.8;
+    ctx.lineWidth = 1.2;
 
     const rng = DoomGlyphs._seededRNG(0x13370f);
     const gridCols = Math.ceil(w / cellPx) + 1;
@@ -98,16 +98,16 @@ const DoomGlyphs = {
     }
 
     // --- Micro glyph text ---
-    ctx.globalAlpha = alpha * 0.6;
-    ctx.fillStyle = accentOrange;
-    ctx.font = 'bold 8px monospace';
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.fillStyle = accentRed;
+    ctx.font = 'bold 9px monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
     const textRng = DoomGlyphs._seededRNG(0x42cafe);
-    const glyphCount = Math.max(4, Math.ceil(w * h / (cellPx * cellPx * 5)));
+    const glyphCount = Math.max(6, Math.ceil(w * h / (cellPx * cellPx * 4)));
 
-    for (let i = 0; i < glyphCount && i < 16; i++) {
+    for (let i = 0; i < glyphCount && i < 20; i++) {
       const glyph = DoomGlyphs.GLYPH_STRINGS[i % DoomGlyphs.GLYPH_STRINGS.length];
       const tx = x + textRng() * w;
       const ty = y + textRng() * h;
