@@ -182,14 +182,14 @@ class GoniometerPanel {
     // Draw overlays
     this._drawOverlays(cx, cy, colors);
     
-    // DOOM theme: Glyph grid overlay (after overlays so visible)
-    if (typeof DoomGlyphs !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+    // Glyph grid overlay (after overlays so visible)
+    if (typeof DoomGlyphs !== 'undefined') {
       const dpr = this.dpr || 1;
       DoomGlyphs.drawGlyphGrid(this.ctx, 0, 0, w, h, dpr, 160, 0.25);
     }
     
-    // DOOM theme: Sigil calibration rings
-    if (typeof DoomSigils !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+    // Sigil calibration rings
+    if (typeof DoomSigils !== 'undefined') {
       const maxR = Math.min(w / 2, h / 2) - 20;
       const time = performance.now() / 1000;
       DoomSigils.drawCalibration(this.ctx, cx, cy, maxR, time);
