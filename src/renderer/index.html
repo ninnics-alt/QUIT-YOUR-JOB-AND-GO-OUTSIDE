@@ -101,28 +101,31 @@
       </div>
 
       <div class="panel-box" data-panel-id="panel-vectorscope">
-        <div class="panel-title">Vectorscope</div>
-        <div class="panel-body">
-          <div class="visual-row">
-            <div class="visual-left scope-wrap">
-              <canvas id="vectorscope" width="256" height="256"></canvas>
-              <div class="scope-control">
-                <label class="label" for="vsPulseShape">Pulse</label>
-                <select id="vsPulseShape">
-                  <option value="polygon">Polygon</option>
-                  <option value="pyramid">Pyramid</option>
-                  <option value="hearts">Hearts</option>
-                  <option value="star">Star</option>
-                  <option value="hexagon">Hexagon</option>
-                  <option value="spiral">Spiral</option>
-                </select>
-              </div>
-              <div class="corr corr-overlay">
-                <div class="label">Stereo Correlation</div>
-                <div id="corrVal">—</div>
-              </div>
-            </div>
+        <div class="panel-title">
+          Vectorscope
+          <div class="vs-controls">
+            <select id="vsStyle" class="vs-select" title="Trace style">
+              <option value="line">LINE</option>
+              <option value="dots">DOTS</option>
+              <option value="filled">FILLED</option>
+              <option value="phosphor" selected>PHOSPHOR</option>
+            </select>
+            <select id="vsRotate" class="vs-select" title="Rotation">
+              <option value="0" selected>ROT 0</option>
+              <option value="15">ROT 15</option>
+              <option value="30">ROT 30</option>
+              <option value="45">ROT 45</option>
+              <option value="60">ROT 60</option>
+              <option value="90">ROT 90</option>
+            </select>
+            <label class="vs-toggle" title="Normalize scale to max amplitude">
+              <input type="checkbox" id="vsNormalize" checked>
+              <span>NORM</span>
+            </label>
           </div>
+        </div>
+        <div class="panel-body">
+          <canvas id="vectorscope" width="256" height="256"></canvas>
         </div>
       </div>
 

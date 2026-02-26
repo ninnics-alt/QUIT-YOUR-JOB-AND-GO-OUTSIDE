@@ -470,12 +470,23 @@ class SpectrumPanel extends Panel {
   constructor(options = {}) {
     super(options);
     this.title = options.title || 'Spectrum';
-    this.freqData = new Uint8Array(256);
-    this.peakBins = new Uint8Array(256);
+    this.freqData = new Float32Array(256);
+    this.rawBins = new Float32Array(256);
+    this.smoothedBins = new Float32Array(256);
+    this.peakBins = new Float32Array(256);
+    this.logX = new Float32Array(256);
+    this.labelX = new Float32Array(11);
+    this.binCount = 256;
     this.sampleRate = 48000;
+    this.minDb = -90;
+    this.maxDb = -10;
+    this.minFreq = 20;
+    this.freqLabels = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     this.hoverFreq = null;
     this.hoverDb = null;
-    this.logScale = false;
+    this.hoverX = null;
+    this.logScale = true;
+    this._rebuildLogMap();
   }
 
   render(parentCtx) {
@@ -483,6 +494,11 @@ class SpectrumPanel extends Panel {
     const contentY = this.y + headerH;
     const contentH = this.height - headerH - 24;
     const { colors, fonts, spacing } = THEME;
+    const axisH = 16; // Space for frequency axis at bottom
+    const drawX = this.x + spacing.md;
+    const drawY = contentY + spacing.sm;
+    const drawW = Math.max(1, this.width - spacing.md * 2);
+    const drawH = Math.max(1, contentH - spacing.sm - axisH);
 
     // Header
     this._renderHeader(parentCtx);
@@ -491,29 +507,11 @@ class SpectrumPanel extends Panel {
     parentCtx.fillStyle = colors.bgSecondary;
     parentCtx.fillRect(this.x, contentY, this.width, contentH);
 
-    // Grid
-    if (this.detailLevel !== 'low') {
-      UIHelpers.drawGrid(parentCtx, this.x, contentY, this.width, contentH, contentH / 4, contentH / 8);
-    }
+    // Grid + axes
+    this._drawGrid(parentCtx, drawX, drawY, drawW, drawH, axisH);
 
-    // dB scale markers (Y-axis)
-    if (this.detailLevel !== 'low') {
-      const dbMarkers = [
-        { pos: 0, label: '-60dB' },
-        { pos: 25, label: '-40dB' },
-        { pos: 50, label: '-20dB' },
-        { pos: 100, label: '0dB' },
-      ];
-      UIHelpers.drawAxisTicks(parentCtx, this.x + 5, contentY, contentH, true, dbMarkers, 3);
-    }
-
-    // Draw frequency bars
-    this._drawFrequencyBars(parentCtx, contentY, contentH);
-
-    // Frequency labels (X-axis)
-    if (this.detailLevel === 'high') {
-      this._drawFrequencyLabels(parentCtx, contentY, contentH);
-    }
+    // Draw spectrum
+    this._drawSpectrum(parentCtx, drawX, drawY, drawW, drawH);
 
     // Hover readout
     if (this.hoverFreq !== null && this.detailLevel === 'high') {
@@ -521,7 +519,18 @@ class SpectrumPanel extends Panel {
       parentCtx.font = fonts.monoSmall;
       parentCtx.textAlign = 'left';
       const text = `${this.hoverFreq.toFixed(0)}Hz / ${this.hoverDb.toFixed(1)}dB`;
-      parentCtx.fillText(text, this.x + spacing.md, contentY + spacing.md);
+      parentCtx.fillText(text, drawX, drawY);
+
+      if (this.hoverX !== null) {
+        parentCtx.strokeStyle = colors.accentBlue;
+        parentCtx.lineWidth = 1;
+        parentCtx.globalAlpha = 0.6;
+        parentCtx.beginPath();
+        parentCtx.moveTo(this.hoverX, drawY);
+        parentCtx.lineTo(this.hoverX, drawY + drawH);
+        parentCtx.stroke();
+        parentCtx.globalAlpha = 1;
+      }
     }
 
     // Scanlines
@@ -533,74 +542,213 @@ class SpectrumPanel extends Panel {
     this._renderStatusLine(parentCtx);
   }
 
-  _drawFrequencyBars(ctx, contentY, contentH) {
+  _drawGrid(ctx, x, y, w, h, axisH) {
+    const { colors, fonts } = THEME;
+    const nyquist = this.sampleRate / 2;
+    const logMin = Math.log10(this.minFreq);
+    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
+
+    ctx.strokeStyle = colors.gridLight;
+    ctx.lineWidth = 1;
+
+    // Vertical log-frequency grid lines
+    for (let i = 0; i < this.freqLabels.length; i++) {
+      const freq = this.freqLabels[i];
+      if (freq > nyquist) continue;
+      const fx = (Math.log10(freq) - logMin) / logRange;
+      const xPos = x + fx * w;
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.moveTo(xPos, y);
+      ctx.lineTo(xPos, y + h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Frequency axis labels at bottom
+    ctx.fillStyle = colors.textPrimary;
+    ctx.font = fonts.monoSmall;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < this.freqLabels.length; i++) {
+      const freq = this.freqLabels[i];
+      if (freq > nyquist) continue;
+      const fx = (Math.log10(freq) - logMin) / logRange;
+      const xPos = x + fx * w;
+      const label = freq >= 1000 ? (freq / 1000).toFixed(0) + 'k' : String(freq);
+      ctx.fillText(label, xPos, y + h + 3);
+    }
+    ctx.globalAlpha = 1;
+
+    // Horizontal dB lines
+    const dbLines = [0, -20, -40, -60, -80];
+    for (let i = 0; i < dbLines.length; i++) {
+      const db = dbLines[i];
+      const yPos = this._dbToY(db, y, h);
+      ctx.strokeStyle = colors.gridDark;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.moveTo(x, yPos);
+      ctx.lineTo(x + w, yPos);
+      ctx.stroke();
+
+      if (this.detailLevel === 'high') {
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = colors.textSecondary;
+        ctx.font = fonts.monoSmall;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${db} dB`, x - 6, yPos);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  _drawSpectrum(ctx, x, y, w, h) {
     const { colors } = THEME;
-    const bins = this.freqData.length;
-    const barW = this.width / bins;
+    const bins = this.binCount;
+    const alpha = this.detailLevel === 'high' ? 0.12 : (this.detailLevel === 'med' ? 0.1 : 0.08);
+    const smoothA = this.detailLevel === 'high' ? 0.12 : (this.detailLevel === 'med' ? 0.18 : 0.28);
+    const peakDecay = this.detailLevel === 'high' ? 0.25 : (this.detailLevel === 'med' ? 0.35 : 0.5);
 
-    // Gradient for color mapping
-    const gradient = ctx.createLinearGradient(0, contentY, 0, contentY + contentH);
-    gradient.addColorStop(0, '#1a4d7a');     // Quiet blue
-    gradient.addColorStop(0.5, '#ffcc00');   // Mid yellow
-    gradient.addColorStop(1, '#ff2a4a');     // Loud red
-
+    // Smooth + peak hold
     for (let i = 0; i < bins; i++) {
-      const value = this.freqData[i] / 255;
-      const barH = value * contentH;
-      const barX = this.x + i * barW;
-      const barY = contentY + contentH - barH;
+      const raw = this._clampDb(this.rawBins[i]);
+      const sm = this.smoothedBins[i] + smoothA * (raw - this.smoothedBins[i]);
+      this.smoothedBins[i] = sm;
+      const peak = this.peakBins[i] - peakDecay;
+      this.peakBins[i] = sm > peak ? sm : peak;
+    }
 
-      // Bar
-      ctx.fillStyle = gradient;
-      ctx.fillRect(barX, barY, Math.max(1, barW - 1), barH);
+    // Filled area
+    ctx.fillStyle = colors.accentGreen;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    for (let i = 0; i < bins; i++) {
+      const xPos = x + this.logX[i] * w;
+      const yPos = this._dbToY(this.smoothedBins[i], y, h);
+      ctx.lineTo(xPos, yPos);
+    }
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
 
-      // Peak hold line
-      const peakValue = this.peakBins[i] / 255;
-      if (peakValue > value) {
-        const peakY = contentY + contentH - (peakValue * contentH);
-        ctx.strokeStyle = colors.accentRed;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(barX, peakY);
-        ctx.lineTo(barX + barW, peakY);
-        ctx.stroke();
+    // Glow pass A
+    ctx.strokeStyle = colors.accentBlue;
+    ctx.lineWidth = 2.4;
+    ctx.globalAlpha = 0.25;
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = colors.accentBlue;
+    ctx.beginPath();
+    for (let i = 0; i < bins; i++) {
+      const xPos = x + this.logX[i] * w;
+      const yPos = this._dbToY(this.smoothedBins[i], y, h);
+      if (i === 0) ctx.moveTo(xPos, yPos);
+      else ctx.lineTo(xPos, yPos);
+    }
+    ctx.stroke();
 
-        // Decay peak
-        this.peakBins[i] = Math.max(this.freqData[i], this.peakBins[i] * 0.98);
+    // Pass B: crisp outline
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < bins; i++) {
+      const xPos = x + this.logX[i] * w;
+      const yPos = this._dbToY(this.smoothedBins[i], y, h);
+      if (i === 0) ctx.moveTo(xPos, yPos);
+      else ctx.lineTo(xPos, yPos);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Peak hold line
+    ctx.strokeStyle = colors.textPrimary;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    for (let i = 0; i < bins; i++) {
+      const xPos = x + this.logX[i] * w;
+      const yPos = this._dbToY(this.peakBins[i], y, h);
+      if (i === 0) ctx.moveTo(xPos, yPos);
+      else ctx.lineTo(xPos, yPos);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  _dbToY(db, y, h) {
+    const t = (db - this.minDb) / (this.maxDb - this.minDb);
+    const clamped = Math.max(0, Math.min(1, t));
+    return y + (1 - clamped) * h;
+  }
+
+  _clampDb(db) {
+    if (db > this.maxDb) return this.maxDb;
+    if (db < this.minDb) return this.minDb;
+    return db;
+  }
+
+  _rebuildLogMap() {
+    const nyquist = this.sampleRate / 2;
+    const logMin = Math.log10(this.minFreq);
+    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
+    const bins = this.binCount;
+    for (let i = 0; i < bins; i++) {
+      const freq = Math.max(this.minFreq, (i / Math.max(1, bins - 1)) * nyquist);
+      const fx = (Math.log10(freq) - logMin) / logRange;
+      this.logX[i] = Math.max(0, Math.min(1, fx));
+    }
+  }
+
+  updateData(freqData, sampleRate) {
+    if (sampleRate) this.sampleRate = sampleRate;
+    if (!freqData) return;
+
+    if (freqData.length !== this.binCount) {
+      this.binCount = freqData.length;
+      this.rawBins = new Float32Array(this.binCount);
+      this.smoothedBins = new Float32Array(this.binCount);
+      this.peakBins = new Float32Array(this.binCount);
+      this.logX = new Float32Array(this.binCount);
+      this._rebuildLogMap();
+    }
+
+    // If Float32Array from getFloatFrequencyData, use directly
+    if (freqData instanceof Float32Array) {
+      this.freqData = freqData;
+      for (let i = 0; i < this.binCount; i++) {
+        this.rawBins[i] = freqData[i];
+      }
+    } else {
+      // Assume Uint8Array and map to dB range
+      for (let i = 0; i < this.binCount; i++) {
+        const v = freqData[i] / 255;
+        this.rawBins[i] = this.minDb + v * (this.maxDb - this.minDb);
       }
     }
   }
 
-  _drawFrequencyLabels(ctx, contentY, contentH) {
-    const { fonts, colors } = THEME;
-    const nyquist = this.sampleRate / 2;
-
-    // Common frequency labels
-    const freqLabels = [100, 500, 1000, 2000, 5000, 10000, 15000, 20000];
-
-    ctx.fillStyle = colors.textSecondary;
-    ctx.font = fonts.monoSmall;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    freqLabels.forEach((freq) => {
-      if (freq > nyquist) return;
-      const binPos = (freq / nyquist) * this.freqData.length;
-      const xPos = this.x + (binPos / this.freqData.length) * this.width;
-
-      const label = freq >= 1000 ? (freq / 1000).toFixed(0) + 'k' : freq + '';
-      ctx.fillText(label, xPos, contentY + contentH + 2);
-    });
-  }
-
-  updateData(freqData, sampleRate) {
-    this.freqData = freqData || new Uint8Array(256);
-    this.sampleRate = sampleRate || 48000;
-  }
-
   setHoverPos(freqBin, dbValue) {
-    this.hoverFreq = (freqBin / this.freqData.length) * (this.sampleRate / 2);
-    this.hoverDb = -60 + (dbValue / 255) * 60;
+    const nyquist = this.sampleRate / 2;
+    if (Number.isInteger(freqBin)) {
+      this.hoverFreq = (freqBin / Math.max(1, this.binCount - 1)) * nyquist;
+    } else {
+      this.hoverFreq = Math.max(this.minFreq, Math.min(nyquist, freqBin || this.minFreq));
+    }
+
+    if (dbValue > 0) {
+      this.hoverDb = this.minDb + (dbValue / 255) * (this.maxDb - this.minDb);
+    } else {
+      this.hoverDb = dbValue;
+    }
+
+    const logMin = Math.log10(this.minFreq);
+    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
+    const fx = (Math.log10(this.hoverFreq) - logMin) / logRange;
+    this.hoverX = this.x + THEME.spacing.md + Math.max(0, Math.min(1, fx)) * (this.width - THEME.spacing.md * 2);
   }
 }
 

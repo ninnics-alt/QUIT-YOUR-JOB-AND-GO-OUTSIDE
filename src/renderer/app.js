@@ -13,6 +13,9 @@
   const vsCanvas = document.getElementById('vectorscope');
   const vsCtx = vsCanvas.getContext('2d');
   const corrValEl = document.getElementById('corrVal');
+  const vsStyleEl = document.getElementById('vsStyle');
+  const vsRotateEl = document.getElementById('vsRotate');
+  const vsNormalizeEl = document.getElementById('vsNormalize');
   // offscreen accumulation buffer for nicer trails
   const vsBuffer = document.createElement('canvas');
   vsBuffer.width = vsCanvas.width;
@@ -30,6 +33,30 @@
   const specGraphCtx = specGraphCanvas.getContext('2d');
   const goniCanvas = document.getElementById('goniometer');
   const goniCtx = goniCanvas.getContext('2d');
+
+  // Vectorscope state (no per-frame allocations)
+  let vsStyle = 'phosphor';
+  let vsNormalize = true;
+  let vsRotateRad = 0;
+  const vsDotSize = 1.5;
+  const vsMaxPoints = 2048;
+  const vsPointsX = new Float32Array(vsMaxPoints);
+  const vsPointsY = new Float32Array(vsMaxPoints);
+  const vsIdx = new Int32Array(vsMaxPoints);
+  const vsHull = new Int32Array(vsMaxPoints * 2);
+  const vsStackL = new Int32Array(vsMaxPoints);
+  const vsStackR = new Int32Array(vsMaxPoints);
+  let vsPointCount = 0;
+  let vsLastCorr = 0;
+  let vsLastWidth = 0;
+  let vsLastBalance = 0;
+
+  if(vsStyleEl) vsStyleEl.addEventListener('change', (e) => { vsStyle = e.target.value; });
+  if(vsNormalizeEl) vsNormalizeEl.addEventListener('change', (e) => { vsNormalize = e.target.checked; });
+  if(vsRotateEl) vsRotateEl.addEventListener('change', (e) => {
+    const deg = parseFloat(e.target.value) || 0;
+    vsRotateRad = (deg * Math.PI) / 180;
+  });
   
   // NEW: Meter display canvas
   const metersCanvas = document.getElementById('metersCanvas');
@@ -396,7 +423,7 @@
         
         drawVectorscope(leftArray, rightArray);
         const corr = computeCorrelation(leftArray, rightArray);
-        corrValEl.textContent = corr.toFixed(2);
+        if(corrValEl) corrValEl.textContent = corr.toFixed(2);
         // draw goniometer
         try{ drawGoniometer(leftArray, rightArray); }catch(e){}
       }catch(e){ /* ignore if channels not available */ }
@@ -558,63 +585,322 @@
     requestAnimationFrame(tick);
   }
 
+  function vsCross(a, b, c){
+    const ax = vsPointsX[a], ay = vsPointsY[a];
+    const bx = vsPointsX[b], by = vsPointsY[b];
+    const cx = vsPointsX[c], cy = vsPointsY[c];
+    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  }
+
+  function vsSortIndices(count){
+    for(let i = 0; i < count; i++) vsIdx[i] = i;
+    let top = 0;
+    vsStackL[top] = 0;
+    vsStackR[top] = count - 1;
+    while(top >= 0){
+      let l = vsStackL[top];
+      let r = vsStackR[top];
+      top--;
+      while(l < r){
+        let i = l;
+        let j = r;
+        const p = vsIdx[(l + r) >> 1];
+        const px = vsPointsX[p];
+        const py = vsPointsY[p];
+        while(i <= j){
+          while(vsPointsX[vsIdx[i]] < px || (vsPointsX[vsIdx[i]] === px && vsPointsY[vsIdx[i]] < py)) i++;
+          while(vsPointsX[vsIdx[j]] > px || (vsPointsX[vsIdx[j]] === px && vsPointsY[vsIdx[j]] > py)) j--;
+          if(i <= j){
+            const tmp = vsIdx[i];
+            vsIdx[i] = vsIdx[j];
+            vsIdx[j] = tmp;
+            i++;
+            j--;
+          }
+        }
+        if(j - l < r - i){
+          if(i < r){
+            top++;
+            vsStackL[top] = i;
+            vsStackR[top] = r;
+          }
+          r = j;
+        }else{
+          if(l < j){
+            top++;
+            vsStackL[top] = l;
+            vsStackR[top] = j;
+          }
+          l = i;
+        }
+      }
+    }
+  }
+
+  function vsBuildHull(count){
+    if(count < 3) return count;
+    vsSortIndices(count);
+    let m = 0;
+    for(let i = 0; i < count; i++){
+      const idx = vsIdx[i];
+      while(m >= 2 && vsCross(vsHull[m - 2], vsHull[m - 1], idx) <= 0) m--;
+      vsHull[m++] = idx;
+    }
+    const lower = m;
+    for(let i = count - 2; i >= 0; i--){
+      const idx = vsIdx[i];
+      while(m > lower && vsCross(vsHull[m - 2], vsHull[m - 1], idx) <= 0) m--;
+      vsHull[m++] = idx;
+    }
+    m--;
+    return m;
+  }
+
   function drawVectorscope(L, R){
     const w = vsCanvas.clientWidth, h = vsCanvas.clientHeight;
+    if(w <= 2 || h <= 2) return;
     const dpr = window.devicePixelRatio || 1;
-    const bufW = w * dpr, bufH = h * dpr;
-    
-    // fade the accumulation buffer slightly to create trails
-    vsBufCtx.fillStyle = 'rgba(2,0,8,0.06)';
-    vsBufCtx.fillRect(0,0,bufW,bufH);
+    const theme = window.THEME || { colors: {}, spacing: {}, fonts: {} };
+    const colors = theme.colors || {};
+    const spacing = theme.spacing || { sm: 8, md: 12, lg: 16 };
 
-    // draw Lissajous lines onto buffer for persistence (in physical pixels)
-    const len = Math.min(L.length, R.length);
-    // choose step to draw many points but not too many
-    const step = 2;
-    vsBufCtx.lineCap = 'round';
-    for(let i=0;i<len-step;i+=step){
-      const lx = L[i]; const rx = R[i];
-      const lx2 = L[i+step]; const rx2 = R[i+step];
-      // map -1..1 to canvas coordinates (swap axes for conventional vectorscope: X=R, Y=L)
-      const x1 = (0.5 + rx*0.48) * bufW; const y1 = (0.5 - lx*0.48) * bufH;
-      const x2 = (0.5 + rx2*0.48) * bufW; const y2 = (0.5 - lx2*0.48) * bufH;
+    const pad = spacing.md || 12;
+    const topPad = spacing.sm || 8;
+    const readoutH = 56;
+    const drawX = pad;
+    const drawY = topPad;
+    const drawW = Math.max(1, w - pad * 2);
+    const drawH = Math.max(1, h - topPad - readoutH - pad);
+    const centerX = drawX + drawW * 0.5;
+    const centerY = drawY + drawH * 0.5;
+    const radius = Math.max(1, Math.min(drawW, drawH) * 0.5 - pad);
 
-      // color based on angle and intensity for detail
-      const ang = Math.atan2(y1 - bufH/2, x1 - bufW/2);
-      const hue = (ang / (Math.PI*2) + 0.5) * 360;
-      const intensity = Math.min(1, Math.hypot(lx, rx));
-      vsBufCtx.strokeStyle = `hsla(${hue.toFixed(0)},85%,60%,${0.08 + intensity*0.18})`;
-      vsBufCtx.lineWidth = 1 + intensity*1.5;
-      vsBufCtx.beginPath();
-      vsBufCtx.moveTo(x1,y1);
-      vsBufCtx.lineTo(x2,y2);
-      vsBufCtx.stroke();
-    }
+    // Background
+    vsCtx.fillStyle = colors.bgSecondary || '#0f1429';
+    vsCtx.fillRect(0, 0, w, h);
 
-    // draw reference grid on visible canvas (in CSS pixels)
-    vsCtx.clearRect(0,0,w,h);
-    // subtle outer vignette
-    vsCtx.fillStyle = 'rgba(0,0,0,0)';
-    vsCtx.fillRect(0,0,w,h);
-    // concentric circles
-    vsCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+    // Reference grid
+    const ringAlpha = detailLevel === 'high' ? 0.18 : (detailLevel === 'med' ? 0.12 : 0.07);
+    vsCtx.save();
+    vsCtx.globalAlpha = ringAlpha;
+    vsCtx.strokeStyle = colors.gridLight || '#1a1f3a';
     vsCtx.lineWidth = 1;
-    for(let r=0.2;r<=0.48;r+=0.12){
+    for(let r = 0.25; r <= 1.0; r += 0.25){
       vsCtx.beginPath();
-      vsCtx.arc(w/2,h/2,w*r,0,Math.PI*2);
+      vsCtx.arc(centerX, centerY, radius * r, 0, Math.PI * 2);
       vsCtx.stroke();
     }
-    // crosshair
-    vsCtx.strokeStyle = 'rgba(255,255,255,0.04)';
+    vsCtx.restore();
+
+    // Axes and guides
+    vsCtx.strokeStyle = colors.accentBlue || '#00e5ff';
+    vsCtx.lineWidth = 1.2;
+    vsCtx.globalAlpha = 0.22;
     vsCtx.beginPath();
-    vsCtx.moveTo(w/2,0); vsCtx.lineTo(w/2,h);
-    vsCtx.moveTo(0,h/2); vsCtx.lineTo(w,h/2);
+    vsCtx.moveTo(centerX - radius, centerY);
+    vsCtx.lineTo(centerX + radius, centerY);
     vsCtx.stroke();
 
-    // draw accumulated buffer onto visible canvas with additive blending for glow
-    vsCtx.globalCompositeOperation = 'lighter';
-    vsCtx.drawImage(vsBuffer, 0, 0, w, h);
-    vsCtx.globalCompositeOperation = 'source-over';
+    vsCtx.globalAlpha = 0.16;
+    vsCtx.beginPath();
+    vsCtx.moveTo(centerX, centerY - radius);
+    vsCtx.lineTo(centerX, centerY + radius);
+    vsCtx.stroke();
+
+    vsCtx.globalAlpha = 0.12;
+    vsCtx.beginPath();
+    vsCtx.moveTo(centerX - radius, centerY - radius);
+    vsCtx.lineTo(centerX + radius, centerY + radius);
+    vsCtx.moveTo(centerX - radius, centerY + radius);
+    vsCtx.lineTo(centerX + radius, centerY - radius);
+    vsCtx.stroke();
+    vsCtx.globalAlpha = 1;
+
+    // Stats + normalization
+    const len = Math.min(L.length, R.length);
+    const step = 2;
+    let maxMag = 0;
+    let sumL = 0, sumR = 0, sumCross = 0, count = 0;
+    for(let i = 0; i < len; i += step){
+      const l = L[i];
+      const r = R[i];
+      const mag = Math.hypot(l, r);
+      if(mag > maxMag) maxMag = mag;
+      sumL += l * l;
+      sumR += r * r;
+      sumCross += l * r;
+      count++;
+    }
+    const scale = (vsNormalize && maxMag > 0.0001) ? (1 / maxMag) : 1;
+    const denom = Math.sqrt(sumL * sumR);
+    let corr = denom > 1e-10 ? (sumCross / denom) : 0;
+    if(corr > 1) corr = 1;
+    if(corr < -1) corr = -1;
+    vsLastCorr = corr;
+    vsLastWidth = Math.sqrt(1 - (vsLastCorr * vsLastCorr)) * 100;
+    const rmsL = Math.sqrt(sumL / (count || 1));
+    const rmsR = Math.sqrt(sumR / (count || 1));
+    vsLastBalance = 20 * Math.log10(rmsL + 1e-12) - 20 * Math.log10(rmsR + 1e-12);
+
+    // Build points (CSS pixels)
+    const cosR = Math.cos(vsRotateRad);
+    const sinR = Math.sin(vsRotateRad);
+    vsPointCount = 0;
+    for(let i = 0; i < len && vsPointCount < vsMaxPoints; i += step){
+      let x = R[i] * scale;
+      let y = L[i] * scale;
+      const xr = x * cosR - y * sinR;
+      const yr = x * sinR + y * cosR;
+      vsPointsX[vsPointCount] = centerX + xr * radius;
+      vsPointsY[vsPointCount] = centerY - yr * radius;
+      vsPointCount++;
+    }
+
+    // Trace styles
+    const traceColor = colors.accentGreen || '#00ff88';
+    if(vsStyle === 'phosphor'){
+      // Fade persistence buffer
+      vsBufCtx.globalCompositeOperation = 'source-over';
+      vsBufCtx.fillStyle = 'rgba(2,0,8,0.08)';
+      vsBufCtx.fillRect(0, 0, vsBuffer.width, vsBuffer.height);
+
+      // Two-pass glow into persistence buffer (additive)
+      vsBufCtx.globalCompositeOperation = 'lighter';
+      const dot = Math.max(1, vsDotSize * dpr);
+
+      vsBufCtx.globalAlpha = 0.25;
+      vsBufCtx.shadowBlur = 3;
+      vsBufCtx.shadowColor = traceColor;
+      for(let i = 0; i < vsPointCount; i++){
+        const px = vsPointsX[i] * dpr;
+        const py = vsPointsY[i] * dpr;
+        vsBufCtx.fillStyle = traceColor;
+        vsBufCtx.fillRect(px - dot, py - dot, dot * 2, dot * 2);
+      }
+
+      vsBufCtx.globalAlpha = 0.8;
+      vsBufCtx.shadowBlur = 0;
+      for(let i = 0; i < vsPointCount; i++){
+        const px = vsPointsX[i] * dpr;
+        const py = vsPointsY[i] * dpr;
+        vsBufCtx.fillStyle = traceColor;
+        vsBufCtx.fillRect(px - dot * 0.5, py - dot * 0.5, dot, dot);
+      }
+      vsBufCtx.globalAlpha = 1;
+
+      vsCtx.save();
+      vsCtx.globalCompositeOperation = 'lighter';
+      vsCtx.drawImage(vsBuffer, 0, 0, w, h);
+      vsCtx.restore();
+    }else{
+      // Two-pass glow rendering
+      if(vsStyle === 'filled' && vsPointCount >= 3){
+        const hullCount = vsBuildHull(vsPointCount);
+        if(hullCount >= 3){
+          vsCtx.globalAlpha = 0.12;
+          vsCtx.fillStyle = traceColor;
+          vsCtx.beginPath();
+          const start = vsHull[0];
+          vsCtx.moveTo(vsPointsX[start], vsPointsY[start]);
+          for(let i = 1; i < hullCount; i++){
+            const idx = vsHull[i];
+            vsCtx.lineTo(vsPointsX[idx], vsPointsY[idx]);
+          }
+          vsCtx.closePath();
+          vsCtx.fill();
+          vsCtx.globalAlpha = 1;
+        }
+      }
+
+      if(vsPointCount > 0){
+        vsCtx.save();
+        vsCtx.strokeStyle = traceColor;
+        vsCtx.fillStyle = traceColor;
+        vsCtx.globalAlpha = 0.25;
+        vsCtx.shadowBlur = 4;
+        vsCtx.shadowColor = traceColor;
+        if(vsStyle === 'dots'){
+          for(let i = 0; i < vsPointCount; i++){
+            const px = vsPointsX[i];
+            const py = vsPointsY[i];
+            vsCtx.fillRect(px - vsDotSize, py - vsDotSize, vsDotSize * 2, vsDotSize * 2);
+          }
+        }else{
+          vsCtx.lineWidth = 2.4;
+          vsCtx.beginPath();
+          vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
+          for(let i = 1; i < vsPointCount; i++){
+            vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
+          }
+          vsCtx.stroke();
+        }
+
+        vsCtx.globalAlpha = 0.9;
+        vsCtx.shadowBlur = 0;
+        if(vsStyle === 'dots'){
+          for(let i = 0; i < vsPointCount; i++){
+            const px = vsPointsX[i];
+            const py = vsPointsY[i];
+            vsCtx.fillRect(px - vsDotSize * 0.5, py - vsDotSize * 0.5, vsDotSize, vsDotSize);
+          }
+        }else{
+          vsCtx.lineWidth = 1.1;
+          vsCtx.beginPath();
+          vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
+          for(let i = 1; i < vsPointCount; i++){
+            vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
+          }
+          vsCtx.stroke();
+        }
+        vsCtx.restore();
+      }
+    }
+
+    // Readout strip + correlation scale
+    const readoutY = drawY + drawH + (spacing.sm || 8);
+    const readoutW = drawW;
+    const readoutHActual = readoutH;
+    vsCtx.fillStyle = colors.bgTertiary || '#141b2e';
+    vsCtx.fillRect(drawX, readoutY, readoutW, readoutHActual);
+    vsCtx.strokeStyle = colors.gridLight || '#1a1f3a';
+    vsCtx.strokeRect(drawX, readoutY, readoutW, readoutHActual);
+
+    vsCtx.fillStyle = colors.textSecondary || '#a0a8c8';
+    vsCtx.font = (theme.fonts && theme.fonts.monoSmall) ? theme.fonts.monoSmall : '9px monospace';
+    vsCtx.textBaseline = 'top';
+    vsCtx.textAlign = 'left';
+    vsCtx.fillText('Corr', drawX + pad, readoutY + 6);
+    vsCtx.fillText('Width', drawX + pad + 120, readoutY + 6);
+    vsCtx.fillText('Balance', drawX + pad + 240, readoutY + 6);
+
+    vsCtx.fillStyle = colors.textPrimary || '#e0e6ff';
+    vsCtx.fillText(vsLastCorr.toFixed(2), drawX + pad, readoutY + 20);
+    vsCtx.fillText(vsLastWidth.toFixed(0) + '%', drawX + pad + 120, readoutY + 20);
+    vsCtx.fillText(vsLastBalance.toFixed(1) + ' dB', drawX + pad + 240, readoutY + 20);
+
+    const scaleY = readoutY + readoutHActual - 14;
+    vsCtx.strokeStyle = colors.gridLight || '#1a1f3a';
+    vsCtx.beginPath();
+    vsCtx.moveTo(drawX + pad, scaleY);
+    vsCtx.lineTo(drawX + readoutW - pad, scaleY);
+    vsCtx.stroke();
+
+    // -1, 0, +1 markers
+    vsCtx.fillStyle = colors.textTertiary || '#6b73a0';
+    vsCtx.textBaseline = 'bottom';
+    vsCtx.fillText('-1', drawX + pad, scaleY - 2);
+    vsCtx.fillText('0', drawX + readoutW / 2, scaleY - 2);
+    vsCtx.fillText('+1', drawX + readoutW - pad - 10, scaleY - 2);
+
+    // Correlation marker
+    const corrX = drawX + pad + ((vsLastCorr + 1) * 0.5) * (readoutW - pad * 2);
+    vsCtx.fillStyle = colors.accentYellow || '#ffcc00';
+    vsCtx.beginPath();
+    vsCtx.moveTo(corrX, scaleY - 8);
+    vsCtx.lineTo(corrX - 4, scaleY - 2);
+    vsCtx.lineTo(corrX + 4, scaleY - 2);
+    vsCtx.closePath();
+    vsCtx.fill();
   }
 
   // ========== OSCILLOSCOPE PANEL ==========
@@ -1174,6 +1460,8 @@
 
   function drawSpecGraph(freq){
     const w = specGraphCanvas.clientWidth, h = specGraphCanvas.clientHeight;
+    const axisH = 18; // Reserve space for frequency axis at bottom
+    const graphH = h - axisH; // Height for the actual graph
     
     // Clear background
     specGraphCtx.fillStyle = 'rgba(4,2,12,0.3)'; 
@@ -1189,7 +1477,7 @@
     // dB markers: -60, -40, -20, 0
     const dbMarkers = [-60, -40, -20, 0];
     for(let db of dbMarkers) {
-      const yPos = h - ((db + 60) / 60) * h; // map -60..0 dB to y range
+      const yPos = graphH - ((db + 60) / 60) * graphH; // map -60..0 dB to y range
       specGraphCtx.beginPath();
       specGraphCtx.moveTo(0, yPos);
       specGraphCtx.lineTo(w, yPos);
@@ -1205,17 +1493,17 @@
     for(let i=0,bi=0;i<bins;i+=step,bi++){
       const v = freq[i]/255;
       const bw = barW-1;
-      const bh = v * h;
+      const bh = v * graphH; // Use graphH instead of h
       const x = bi*barW;
-      const y = h - bh;
+      const y = graphH - bh; // Position relative to graphH
       
       specGraphCtx.fillStyle = colorForValue(v);
       specGraphCtx.fillRect(x, y, bw, bh);
     }
     
-    // Draw frequency labels on x-axis
-    specGraphCtx.fillStyle = 'rgba(150,150,200,0.7)';
-    specGraphCtx.font = 'bold 12px monospace';
+    // Draw frequency labels on x-axis (in the reserved space at bottom)
+    specGraphCtx.fillStyle = 'rgba(200,220,255,0.9)';
+    specGraphCtx.font = 'bold 11px monospace';
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
@@ -1229,7 +1517,7 @@
       const binIdx = Math.floor((freq / nyquist) * bins);
       const xPos = (binIdx / step) * barW;
       const label = freq >= 1000 ? (freq/1000).toFixed(0) + 'k' : freq;
-      specGraphCtx.fillText(label, xPos, h - 3);
+      specGraphCtx.fillText(label, xPos, graphH + 3); // Draw in the axis space below graph
     }
     
     // Draw title
