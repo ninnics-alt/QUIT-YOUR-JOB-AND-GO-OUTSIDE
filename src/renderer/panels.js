@@ -73,6 +73,7 @@ class WaveformPanel extends Panel {
     const contentY = this.y + headerH;
     const contentH = this.height - headerH - 24;
     const { colors, spacing, fonts } = THEME;
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
 
     // Header
     this._renderHeader(parentCtx);
@@ -81,15 +82,14 @@ class WaveformPanel extends Panel {
     parentCtx.fillStyle = colors.bgSecondary;
     parentCtx.fillRect(this.x, contentY, this.width, contentH);
 
+    // Glyph underlay (before grid, only on doom theme)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(parentCtx, this.x, contentY, this.width, contentH, t, 0.10);
+    }
+
     // Grid
     if (this.detailLevel !== 'low') {
       UIHelpers.drawGrid(parentCtx, this.x, contentY, this.width, contentH, contentH / 4, contentH / 16 / 4);
-    }
-
-    // Glyph grid overlay (after grid so visible)
-    if (typeof DoomGlyphs !== 'undefined') {
-      const dpr = window.devicePixelRatio || 1;
-      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.25);
     }
 
     // Centerline (brighter)
@@ -233,6 +233,7 @@ class OscilloscopePanel extends Panel {
     const contentY = this.y + headerH;
     const contentH = this.height - headerH - 56; // Leave room for readout strip
     const { colors, spacing, fonts } = THEME;
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
 
     // Header
     this._renderHeader(parentCtx);
@@ -245,6 +246,11 @@ class OscilloscopePanel extends Panel {
     const [r, g, b] = UIHelpers._parseRGB(colors.bgInset);
     this.persistenceCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.fadeAlpha})`;
     this.persistenceCtx.fillRect(0, 0, this.persistenceCanvas.width, this.persistenceCanvas.height);
+
+    // === STEP 1.5: Draw glyph underlay on persistence buffer (before grid) ===
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(this.persistenceCtx, 0, 0, this.persistenceCanvas.width, contentH, t, 0.06);
+    }
 
     // === STEP 2: Draw grid (cached if possible) ===
     if (this.detailLevel !== 'low') {
@@ -507,6 +513,7 @@ class SpectrumPanel extends Panel {
     const drawY = contentY + spacing.sm;
     const drawW = Math.max(1, this.width - spacing.md * 2);
     const drawH = Math.max(1, contentH - spacing.sm - axisH);
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
 
     // Header
     this._renderHeader(parentCtx);
@@ -515,14 +522,13 @@ class SpectrumPanel extends Panel {
     parentCtx.fillStyle = colors.bgSecondary;
     parentCtx.fillRect(this.x, contentY, this.width, contentH);
 
+    // Glyph underlay (before grid, only on doom theme)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(parentCtx, this.x, contentY, this.width, contentH, t, 0.10);
+    }
+
     // Grid + axes
     this._drawGrid(parentCtx, drawX, drawY, drawW, drawH, axisH);
-
-    // Glyph grid overlay (after grid so visible)
-    if (typeof DoomGlyphs !== 'undefined') {
-      const dpr = window.devicePixelRatio || 1;
-      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.25);
-    }
 
     // Draw spectrum
     this._drawSpectrum(parentCtx, drawX, drawY, drawW, drawH);
@@ -781,6 +787,7 @@ class VectorScopePanel extends Panel {
     const contentY = this.y + headerH;
     const contentH = this.height - headerH - 24;
     const { colors, fonts, spacing } = THEME;
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
 
     // Header
     this._renderHeader(parentCtx);
@@ -793,21 +800,19 @@ class VectorScopePanel extends Panel {
     const centerY = contentY + contentH / 2;
     const radius = Math.min(this.width, contentH) / 2 - 20;
 
+    // Glyph underlay (before grid, only on doom theme)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(parentCtx, this.x, contentY, this.width, contentH, t, 0.10);
+    }
+
     // Circular grid rings
     if (this.detailLevel !== 'low') {
       this._drawCircularGrid(parentCtx, centerX, centerY, radius);
     }
 
-    // Glyph grid overlay (after grid so visible)
-    if (typeof DoomGlyphs !== 'undefined') {
-      const dpr = window.devicePixelRatio || 1;
-      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.30);
-    }
-
-    // Sigil calibration rings
+    // Sigil calibration rings (vectorscope only, with reduced opacity)
     if (typeof DoomSigils !== 'undefined') {
-      const time = performance.now() / 1000;
-      DoomSigils.drawCalibration(parentCtx, centerX, centerY, radius, time);
+      DoomSigils.drawCalibration(parentCtx, centerX, centerY, radius, t);
     }
 
     // Clipping boundary (circle at 1.0)

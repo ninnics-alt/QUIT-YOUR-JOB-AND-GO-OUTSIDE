@@ -143,6 +143,7 @@ class GoniometerPanel {
     const { w, h, cx, cy } = this._getDrawRect();
     const colors = this._getColors();
     const len = Math.min(leftArray.length, rightArray.length);
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     
     // Compute metrics
     this._computeMetrics(leftArray, rightArray, len);
@@ -157,6 +158,11 @@ class GoniometerPanel {
     
     // Accumulate points for this frame
     this._accumulatePoints(mapped, len, cx, cy);
+    
+    // Glyph underlay (before mode rendering, only on doom theme)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(this.ctx, 0, 0, w, h, t, 0.10);
+    }
     
     // Render based on mode
     switch (this.mode) {
@@ -182,17 +188,10 @@ class GoniometerPanel {
     // Draw overlays
     this._drawOverlays(cx, cy, colors);
     
-    // Glyph grid overlay (after overlays so visible)
-    if (typeof DoomGlyphs !== 'undefined') {
-      const dpr = this.dpr || 1;
-      DoomGlyphs.drawGlyphGrid(this.ctx, 0, 0, w, h, dpr, 160, 0.25);
-    }
-    
-    // Sigil calibration rings
+    // Sigil calibration rings (goniometer only, with reduced opacity)
     if (typeof DoomSigils !== 'undefined') {
       const maxR = Math.min(w / 2, h / 2) - 20;
-      const time = performance.now() / 1000;
-      DoomSigils.drawCalibration(this.ctx, cx, cy, maxR, time);
+      DoomSigils.drawCalibration(this.ctx, cx, cy, maxR, t);
     }
     
     // Draw HUD

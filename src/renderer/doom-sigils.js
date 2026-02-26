@@ -28,6 +28,7 @@ const DoomSigils = {
 
   /**
    * Draw calibration rings with runes, ticks, and teeth
+   * Only renders if theme === 'doom'
    * @param {CanvasRenderingContext2D} ctx
    * @param {number} cx - Center X
    * @param {number} cy - Center Y
@@ -36,9 +37,13 @@ const DoomSigils = {
    * @param {object} opts - Options { accentColor, theme }
    */
   drawCalibration(ctx, cx, cy, radius, t = 0, opts = {}) {
-    // Always render for testing (will only appear when panels call it)
+    // Theme gate: only render for doom theme
     const theme = opts.theme || (typeof THEME !== 'undefined' ? THEME : null);
-    const accentColor = opts.accentColor || (theme && theme.colors && theme.colors.accentRed) || '#FF3333';
+    if (!theme || theme.currentPalette !== 'doom') {
+      return;
+    }
+
+    const accentColor = opts.accentColor || (theme && theme.colors && theme.colors.accentA) || '#FF3333';
 
     // Slow rotation: ~0.12 rad/s * t
     const angleOffset = t * 0.12;
@@ -47,7 +52,7 @@ const DoomSigils = {
 
     // --- Concentric circular glyph rings ---
     ctx.strokeStyle = accentColor;
-    ctx.globalAlpha = 0.50;
+    ctx.globalAlpha = 0.10; // Subtle rings
     ctx.lineWidth = 2.0;
 
     // Draw 3 concentric circles
@@ -59,7 +64,7 @@ const DoomSigils = {
     });
 
     // --- Runes: small arc segments around the rings ---
-    ctx.globalAlpha = 0.40;
+    ctx.globalAlpha = 0.08; // Even more subtle
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = accentColor;
 
@@ -79,7 +84,7 @@ const DoomSigils = {
     });
 
     // --- Rotating ticks (8 at 45° increments) ---
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.09; // Subtle ticks
     ctx.lineWidth = 2.0;
     ctx.strokeStyle = accentColor;
 
@@ -102,7 +107,7 @@ const DoomSigils = {
     });
 
     // --- Warning teeth on outer radius (every other position) ---
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.06; // Most subtle - teeth
     ctx.fillStyle = accentColor;
 
     DoomSigils.TEETH_ANGLES.forEach((angle) => {

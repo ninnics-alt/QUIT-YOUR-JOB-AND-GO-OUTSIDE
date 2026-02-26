@@ -1,7 +1,8 @@
 /**
- * DOOM-GLYPHS.JS - Mystical glyph grid background pattern for all panels
- * Precomputed diagonal chevrons, warning triangles, pseudo-text underlays
- * Low opacity (0.08-0.10), cached CanvasPattern, no per-frame allocations
+ * DOOM-GLYPHS.JS - Mystical glyph grid background pattern for DOOM PROPHET theme
+ * Cached CanvasPattern with chevrons, warning triangles, micro pseudo-text
+ * Low opacity (0.06–0.12), subtle drift, deterministic seeded RNG
+ * No per-frame allocations; pattern rebuilt only on theme/dpr/cellSize change
  */
 
 const DoomGlyphs = {
@@ -32,106 +33,158 @@ const DoomGlyphs = {
     };
   },
 
-  // Cache: { key: { pattern, canvas, lastThemeVersion } }
+  // Cache: { key: CanvasPattern }
+  // Key format: "dpr_cellPx_r_g_b" (theme colors baked in)
   _patternCache: {},
 
   /**
-   * Get or create a CanvasPattern for glyph grid (DEPRECATED - now using direct drawing)
-   * @deprecated Use drawGlyphGrid instead
+   * Get or create a CanvasPattern for the glyph grid underlay
+   * @param {Object} opts - { dpr, cellPx, accentRed }
+   * @returns {CanvasPattern}
    */
-  getPattern(dpr = 1, cellPx = 160) {
-    // Pattern-based approach is deprecated; drawGlyphGrid now renders directly
-    return null;
+  getPattern(opts = {}) {
+    const dpr = opts.dpr || 1;
+    const cellPx = opts.cellPx || 160;
+    const accentRed = opts.accentRed || '#FF3333';
+
+    // Parse RGB from hex
+    const r = parseInt(accentRed.slice(1, 3), 16);
+    const g = parseInt(accentRed.slice(3, 5), 16);
+    const b = parseInt(accentRed.slice(5, 7), 16);
+
+    const cacheKey = `${dpr}_${cellPx}_${r}_${g}_${b}`;
+    if (DoomGlyphs._patternCache[cacheKey]) {
+      return DoomGlyphs._patternCache[cacheKey];
+    }
+
+    // Build offscreen canvas for pattern
+    const cellSize = Math.ceil(cellPx * dpr);
+    const offscreen = document.createElement('canvas');
+    offscreen.width = cellSize;
+    offscreen.height = cellSize;
+    const octx = offscreen.getContext('2d');
+
+    // Transparent background
+    octx.clearRect(0, 0, cellSize, cellSize);
+
+    // --- Diagonal chevrons (45° thin lines, broken pattern) ---
+    octx.strokeStyle = accentRed;
+    octx.lineWidth = Math.max(0.8 * dpr, 1);
+    octx.globalAlpha = 0.08;
+
+    const chevronSpacing = cellSize * 0.5;
+    for (let x = -cellSize; x <= cellSize * 2; x += chevronSpacing) {
+      octx.beginPath();
+      octx.moveTo(x, 0);
+      octx.lineTo(x + cellSize, cellSize);
+      octx.stroke();
+    }
+
+    // --- Warning triangles (scattered, seeded RNG for consistency) ---
+    octx.globalAlpha = 0.06;
+    octx.lineWidth = Math.max(0.6 * dpr, 0.8);
+
+    const rng = DoomGlyphs._seededRNG(0x13370f);
+    const triCount = 3; // Few per cell
+    for (let i = 0; i < triCount; i++) {
+      const tx = rng() * cellSize;
+      const ty = rng() * cellSize;
+      const size = (2 + rng() * 1.5) * dpr;
+
+      octx.save();
+      octx.translate(tx, ty);
+      octx.rotate(rng() * Math.PI);
+
+      octx.beginPath();
+      octx.moveTo(0, -size);
+      octx.lineTo(size * 0.866, size * 0.5);
+      octx.lineTo(-size * 0.866, size * 0.5);
+      octx.closePath();
+      octx.stroke();
+
+      octx.restore();
+    }
+
+    // --- Micro pseudo-text glyphs (6-8px, partially legible, rotated) ---
+    octx.globalAlpha = 0.10;
+    octx.fillStyle = accentRed;
+    octx.font = `${Math.max(5 * dpr, 6)}px monospace`;
+    octx.textAlign = 'center';
+    octx.textBaseline = 'middle';
+
+    const textCount = 2; // Few texts per cell
+    const rng2 = DoomGlyphs._seededRNG(0x13370f + 1);
+    for (let i = 0; i < textCount; i++) {
+      const tx = rng2() * cellSize;
+      const ty = rng2() * cellSize;
+      const rotation = (rng2() - 0.5) * 0.3; // ±8.6° rotation
+
+      octx.save();
+      octx.translate(tx, ty);
+      octx.rotate(rotation);
+
+      const glyph = DoomGlyphs.GLYPH_STRINGS[Math.floor(rng2() * DoomGlyphs.GLYPH_STRINGS.length)];
+      octx.fillText(glyph, 0, 0);
+
+      octx.restore();
+    }
+
+    // Create pattern
+    const pattern = octx.createPattern(offscreen, 'repeat');
+    DoomGlyphs._patternCache[cacheKey] = pattern;
+
+    return pattern;
   },
 
-  drawGlyphGrid(ctx, x, y, w, h, dpr = 1, cellPx = 160, alpha = 0.25) {
-    // Always render for all themes (will use defaults if theme not available)
+  /**
+   * Draw the glyph underlay for a panel body
+   * ONLY renders if theme === 'doom'
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} bodyX - Panel body left edge
+   * @param {number} bodyY - Panel body top edge
+   * @param {number} bodyW - Panel body width
+   * @param {number} bodyH - Panel body height
+   * @param {number} t - Time in seconds (for subtle drift)
+   * @param {number} panelAlpha - Per-panel alpha override (default 0.10)
+   */
+  drawUnderlay(ctx, bodyX, bodyY, bodyW, bodyH, t = 0, panelAlpha = 0.10) {
+    // Theme gate: only render for doom theme
     const theme = typeof THEME !== 'undefined' ? THEME : null;
+    if (!theme || theme.currentPalette !== 'doom') {
+      return;
+    }
+
     const colors = (theme && theme.colors) || {};
-    const accentOrange = colors.accentB || '#FF8B33';
     const accentRed = colors.accentA || '#FF3333';
+    const dpr = window.devicePixelRatio || 1;
+    const cellPx = 160;
+
+    // Get cached pattern
+    const pattern = DoomGlyphs.getPattern({ dpr, cellPx, accentRed });
+    if (!pattern) return;
 
     ctx.save();
 
-    // --- Diagonal chevrons (45° lines) ---
-    ctx.strokeStyle = accentRed;
-    ctx.lineWidth = 2.0;
-    ctx.globalAlpha = alpha * 1.2;
+    // Clip to panel body rect (no header/toolbar overlap)
+    ctx.beginPath();
+    ctx.rect(bodyX, bodyY, bodyW, bodyH);
+    ctx.clip();
 
-    const chevronSpacing = cellPx * 0.75;
-    for (let ox = x - h; ox < x + w + h; ox += chevronSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(ox, y - h);
-      ctx.lineTo(ox + h, y + h);
-      ctx.stroke();
-    }
+    // Subtle drift (scrolls slowly)
+    const driftX = (t * 2) % cellPx; // ~2px/sec
+    const driftY = (t * 1) % cellPx; // ~1px/sec
 
-    // --- Warning triangles (seeded RNG for consistency) ---
-    ctx.globalAlpha = alpha * 1.0;
-    ctx.strokeStyle = accentRed;
-    ctx.lineWidth = 1.2;
-
-    const rng = DoomGlyphs._seededRNG(0x13370f);
-    const gridCols = Math.ceil(w / cellPx) + 1;
-    const gridRows = Math.ceil(h / cellPx) + 1;
-
-    for (let row = 0; row < gridRows; row++) {
-      for (let col = 0; col < gridCols; col++) {
-        rng(); // Advance RNG
-        const triX = x + col * cellPx + rng() * cellPx * 0.5;
-        const triY = y + row * cellPx + rng() * cellPx * 0.5;
-        const triSize = 3 + rng() * 2;
-
-        ctx.save();
-        ctx.translate(triX, triY);
-        ctx.rotate(rng() * Math.PI);
-
-        ctx.beginPath();
-        ctx.moveTo(0, -triSize);
-        ctx.lineTo(triSize * 0.866, triSize * 0.5);
-        ctx.lineTo(-triSize * 0.866, triSize * 0.5);
-        ctx.closePath();
-        ctx.stroke();
-
-        ctx.restore();
-      }
-    }
-
-    // --- Micro glyph text ---
-    ctx.globalAlpha = 1.0;
-    ctx.fillStyle = '#FF0000';  // Pure bright red
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Place glyphs in specific visible locations within the panel
-    const glyphs = [
-      { x: 0.15, y: 0.2 },
-      { x: 0.5, y: 0.2 },
-      { x: 0.85, y: 0.2 },
-      { x: 0.3, y: 0.5 },
-      { x: 0.7, y: 0.5 },
-      { x: 0.15, y: 0.8 },
-      { x: 0.5, y: 0.8 },
-      { x: 0.85, y: 0.8 }
-    ];
-
-    glyphs.forEach((pos, i) => {
-      const glyph = DoomGlyphs.GLYPH_STRINGS[i % DoomGlyphs.GLYPH_STRINGS.length];
-      const tx = x + pos.x * w;
-      const ty = y + pos.y * h;
-
-      ctx.save();
-      ctx.translate(tx, ty);
-      ctx.fillText(glyph, 0, 0);
-      ctx.restore();
-    });
+    // Draw pattern underlay
+    ctx.globalAlpha = panelAlpha;
+    ctx.fillStyle = pattern;
+    ctx.translate(bodyX + driftX, bodyY + driftY);
+    ctx.fillRect(-cellPx, -cellPx, bodyW + cellPx * 2, bodyH + cellPx * 2);
 
     ctx.restore();
   },
 
   /**
-   * Clear pattern cache (call on theme change if needed)
+   * Clear pattern cache (call on theme change)
    */
   clearCache() {
     DoomGlyphs._patternCache = {};

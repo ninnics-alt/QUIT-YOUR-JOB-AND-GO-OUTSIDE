@@ -740,7 +740,8 @@ class BassCarPanel {
     const { w, h } = this.drawRect;
     const ctx = this.ctx;
     const now = performance.now();
-    
+    const t = now / 1000; // Time in seconds
+
     // Get frequency data
     if (this.analyserL && freqDataL) {
       this.analyserL.getFloatFrequencyData(freqDataL);
@@ -784,12 +785,24 @@ class BassCarPanel {
       // Wrap scene rendering in heat distortion effect
       window.DOOM_FX.applyHeatDistortion(ctx, (distortCtx, dw, dh) => {
         this._drawBackground_Internal(distortCtx);
+        
+        // Glyph underlay (before road, only on doom theme)
+        if (typeof DoomGlyphs !== 'undefined') {
+          DoomGlyphs.drawUnderlay(distortCtx, 0, 0, dw, dh, t, 0.08);
+        }
+        
         this._drawRoad_Internal(distortCtx);
         this._drawCar_Internal(distortCtx);
       }, w, h);
     } else {
       // Normal rendering path
       this._drawBackground();
+      
+      // Glyph underlay (before road, only on doom theme)
+      if (typeof DoomGlyphs !== 'undefined') {
+        DoomGlyphs.drawUnderlay(ctx, 0, 0, w, h, t, 0.08);
+      }
+      
       this._drawRoad();
       this._drawCar();
     }

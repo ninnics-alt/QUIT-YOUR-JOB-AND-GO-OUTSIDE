@@ -911,10 +911,16 @@
     const centerX = drawX + drawW * 0.5;
     const centerY = drawY + drawH * 0.5;
     const radius = Math.max(1, Math.min(drawW, drawH) * 0.5 - pad);
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
 
     // Background
     vsCtx.fillStyle = colors.bgSecondary || colors.bgPanel;
     vsCtx.fillRect(0, 0, w, h);
+
+    // Glyph underlay (before grid, only on doom theme)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(vsCtx, drawX, drawY, drawW, drawH, t, 0.10);
+    }
 
     // Reference grid
     const ringAlpha = detailLevel === 'high' ? 0.18 : (detailLevel === 'med' ? 0.12 : 0.07);
@@ -928,6 +934,11 @@
       vsCtx.stroke();
     }
     vsCtx.restore();
+
+    // Sigil calibration rings (vectorscope only)
+    if (typeof DoomSigils !== 'undefined') {
+      DoomSigils.drawCalibration(vsCtx, centerX, centerY, radius, t);
+    }
 
     // Axes and guides
     vsCtx.strokeStyle = colors.accentBlue || colors.accentA;
@@ -1777,6 +1788,7 @@
     const w = specCanvas.clientWidth, h = specCanvas.clientHeight;
     const dpr = window.devicePixelRatio || 1;
     const bufW = w * dpr, bufH = h * dpr;
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     
     // shift left by 1 pixel (in physical pixels)
     specBufCtx.drawImage(specBuf, -1, 0);
@@ -1790,6 +1802,11 @@
     }
     // copy buffer to visible canvas (CSS pixels)
     specCtx.drawImage(specBuf, 0, 0, w, h);
+
+    // Glyph underlay (minimal alpha for spectrogram so data remains visible)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(specCtx, 0, 0, w, h, t, 0.06);
+    }
     
     // Apply theme overlays (scanlines, noise, glitter)
     if (window.CanvasOverlays) {
@@ -1810,10 +1827,16 @@
     const axisH = 18; // Reserve space for frequency axis at bottom
     const graphH = h - axisH; // Height for the actual graph
     const colors = THEME.colors;
+    const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     
     // Clear background
     specGraphCtx.fillStyle = colors.bgInset;
     specGraphCtx.fillRect(0,0,w,h);
+
+    // Glyph underlay (minimal alpha for spectrograph so data remains visible)
+    if (typeof DoomGlyphs !== 'undefined') {
+      DoomGlyphs.drawUnderlay(specGraphCtx, 0, 0, w, graphH, t, 0.06);
+    }
     
     // Draw gridlines and dB markers (y-axis)
     const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
