@@ -186,7 +186,22 @@
       </div>
 
       <div class="panel-box canvas-panel" data-panel-id="panel-goniometer">
-        <div class="panel-title">Goniometer</div>
+        <div class="panel-title">
+          Goniometer
+          <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <select id="goniModeSelect" style="flex: 1; padding: 2px 4px; font-size: 11px;">
+              <option value="PHOSPHOR">Phosphor</option>
+              <option value="DOTS">Dots</option>
+              <option value="RIBBON">Ribbon</option>
+              <option value="L/R">L/R Stereo</option>
+              <option value="HEATMAP">Heatmap</option>
+            </select>
+            <select id="goniMappingSelect" style="flex: 1; padding: 2px 4px; font-size: 11px;">
+              <option value="LR">L/R</option>
+              <option value="MS">Mid/Side</option>
+            </select>
+          </div>
+        </div>
         <div class="panel-body">
           <canvas id="goniometer" width="256" height="256"></canvas>
         </div>
@@ -226,6 +241,7 @@
   <script src="meters-simple.js"></script>
   <script src="glitter-layer.js"></script>
   <script src="bass-car-panel.js"></script>
+  <script src="goniometer-panel.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

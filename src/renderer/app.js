@@ -31,8 +31,16 @@
   const specBufCtx = specBuf.getContext('2d');
   const specGraphCanvas = document.getElementById('specgraph');
   const specGraphCtx = specGraphCanvas.getContext('2d');
+  
+  // Goniometer panel (upgraded with persistence, heatmap, multiple modes)
   const goniCanvas = document.getElementById('goniometer');
-  const goniCtx = goniCanvas.getContext('2d');
+  let goniometerPanel = null;
+  if(goniCanvas && window.GoniometerPanel){
+    goniometerPanel = new window.GoniometerPanel(goniCanvas);
+    console.log('[Goniometer] Panel initialized:', goniometerPanel);
+  } else {
+    console.warn('[Goniometer] Init failed - canvas:', !!goniCanvas, 'class available:', !!window.GoniometerPanel);
+  }
 
   // Vectorscope state (no per-frame allocations)
   let vsStyle = 'phosphor';
@@ -57,6 +65,24 @@
     const deg = parseFloat(e.target.value) || 0;
     vsRotateRad = (deg * Math.PI) / 180;
   });
+  
+  // Wire up Goniometer mode and mapping controls
+  if(goniometerPanel){
+    const goniModeSelect = document.getElementById('goniModeSelect');
+    const goniMappingSelect = document.getElementById('goniMappingSelect');
+    
+    if(goniModeSelect){
+      goniModeSelect.addEventListener('change', (e) => {
+        goniometerPanel.setMode(e.target.value);
+      });
+    }
+    
+    if(goniMappingSelect){
+      goniMappingSelect.addEventListener('change', (e) => {
+        goniometerPanel.setMapping(e.target.value);
+      });
+    }
+  }
   
   // NEW: Meter display canvas
   const metersCanvas = document.getElementById('metersCanvas');
@@ -416,14 +442,58 @@
   async function start(){
     const deviceId = deviceSelect.value || undefined;
     try{
-      // If user selected 'default', call getUserMedia without deviceId to use system default
-      const constraints = deviceId && deviceId !== 'default' ? { audio: { deviceId: { exact: deviceId } } } : { audio: true };
+      // Request stereo audio with optimal constraints
+      let constraints;
+      if (deviceId && deviceId !== 'default') {
+        constraints = {
+          audio: {
+            deviceId: { exact: deviceId },
+            channelCount: { ideal: 2 },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        };
+      } else {
+        constraints = {
+          audio: {
+            channelCount: { ideal: 2 },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        };
+      }
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const settings = audioTracks[0].getSettings?.();
+        console.log('[Audio] Stream acquired with settings:', {
+          channelCount: settings?.channelCount,
+          sampleRate: settings?.sampleRate,
+          trackLabel: audioTracks[0].label
+        });
+      }
     }catch(e){
       // try fallback: attempt default device if a specific device failed
       console.warn('getUserMedia failed for selected device:', e);
       try{
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: { ideal: 2 },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          const settings = audioTracks[0].getSettings?.();
+          console.log('[Audio] Stream acquired (fallback) with settings:', {
+            channelCount: settings?.channelCount,
+            sampleRate: settings?.sampleRate
+          });
+        }
       }catch(err){
         alert('Could not open audio device: ' + err.message);
         return;
@@ -473,7 +543,7 @@
     const freqBinCount = analyser.frequencyBinCount;
     const freqData = new Uint8Array(freqBinCount);
 
-    // channel split for vectorscope
+    // channel split for vectorscope and goniometer
     splitter = audioCtx.createChannelSplitter(2);
     analyserL = audioCtx.createAnalyser(); analyserL.fftSize = 1024;
     analyserR = audioCtx.createAnalyser(); analyserR.fftSize = 1024;
@@ -481,6 +551,14 @@
     rightArray = new Float32Array(analyserR.fftSize);
     freqDataL = new Float32Array(analyserL.frequencyBinCount);
     freqDataR = new Float32Array(analyserR.frequencyBinCount);
+    
+    // Create a stereo merger for fallback (mono to stereo conversion)
+    const merger = audioCtx.createChannelMerger(2);
+    let isMono = false;
+    
+    // Try to detect if source is mono
+    const sourceChannels = source.maxChannelCount || 1;
+    console.log('[Audio] Source max channels:', sourceChannels);
 
     // Initialize Bass Car Panel (replaces waveform)
     if(window.BassCarPanel && canvas){
@@ -497,6 +575,10 @@
     splitter.connect(analyserL, 0);
     splitter.connect(analyserR, 1);
     kWeightNodeHead = analyser; // point to analyser instead of shelf
+    
+    // If the input is mono, we can optionally add stereo processing here
+    // For now, we'll connect in a way that works with mono input
+    // (splitter will duplicate the mono channel to both left/right analysers)
 
     // LUFS buffer: store 10s of audio to allow gating and integrated calc
     bufLen = sampleRate * 10 | 0;
@@ -549,8 +631,15 @@
         drawVectorscope(leftArray, rightArray);
         const corr = computeCorrelation(leftArray, rightArray);
         if(corrValEl) corrValEl.textContent = corr.toFixed(2);
-        // draw goniometer
-        try{ drawGoniometer(leftArray, rightArray); }catch(e){}
+        
+        // Render goniometer with new panel
+        if(goniometerPanel){
+          try{ 
+            goniometerPanel.render(leftArray, rightArray);
+          }catch(e){
+            console.error('[Goniometer] Render error:', e);
+          }
+        }
       }catch(e){ /* ignore if channels not available */ }
       // push data into circular buffer for block LUFS processing
       // Use main dataArray (2048 samples) for loudness calc, regardless of channel split
@@ -1677,40 +1766,6 @@
     const hue = Math.round((1 - v) * 240); // blue->red
     const sat = 85; const light = Math.round(30 + v*40);
     return `hsl(${hue}, ${sat}%, ${light}%)`;
-  }
-
-  function drawGoniometer(L, R){
-    const w = goniCanvas.clientWidth, h = goniCanvas.clientHeight; const cx = w/2, cy = h/2;
-    const colors = THEME.colors;
-    const [bgr, bgg, bgb] = UIHelpers._parseRGB(colors.bgInset);
-    goniCtx.fillStyle = `rgba(${bgr},${bgg},${bgb},0.25)`;
-    goniCtx.fillRect(0,0,w,h);
-    // compute angle histogram
-    const hist = new Array(36).fill(0);
-    const len = Math.min(L.length, R.length);
-    for(let i=0;i<len;i+=4){
-      const a = L[i], b = R[i];
-      const ang = Math.atan2(b, a); // -PI..PI
-      const idx = Math.floor(((ang + Math.PI) / (2*Math.PI)) * hist.length) % hist.length;
-      hist[idx] += Math.hypot(a,b);
-    }
-    // normalize
-    const max = Math.max(...hist) || 1;
-    // draw polar bars
-    for(let i=0;i<hist.length;i++){
-      const ratio = hist[i]/max; const ang = (i / hist.length) * Math.PI*2;
-      const r0 = 30; const r1 = 30 + ratio * (Math.min(cx,cy)-40);
-      const x0 = cx + Math.cos(ang) * r0; const y0 = cy + Math.sin(ang) * r0;
-      const x1 = cx + Math.cos(ang) * r1; const y1 = cy + Math.sin(ang) * r1;
-      const [acr, acg, acb] = UIHelpers._parseRGB(colors.accentA);
-      goniCtx.strokeStyle = `rgba(${acr},${acg},${acb},${0.15 + ratio*0.7})`;
-      goniCtx.lineWidth = 2;
-      goniCtx.beginPath(); goniCtx.moveTo(x0,y0); goniCtx.lineTo(x1,y1); goniCtx.stroke();
-    }
-    // draw center marker
-    const [cenr, ceng, cenb] = UIHelpers._parseRGB(colors.grid);
-    goniCtx.fillStyle = `rgba(${cenr},${ceng},${cenb},0.4)`;
-    goniCtx.beginPath(); goniCtx.arc(cx,cy,3,0,Math.PI*2); goniCtx.fill();
   }
 
   function computeCorrelation(L, R){

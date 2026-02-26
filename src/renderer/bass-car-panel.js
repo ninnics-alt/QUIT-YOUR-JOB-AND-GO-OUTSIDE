@@ -8,9 +8,20 @@ class BassHitDetector {
     this.sampleRate = sampleRate;
     this.fftSize = fftSize;
     
-    // Band settings (Hz)
-    this.bandLo = 35;
-    this.bandHi = 110;
+    // Frequency band presets (Hz)
+    this.bandPresets = [
+      { name: 'SUB (20-60)', lo: 20, hi: 60 },
+      { name: 'KICK (30-90)', lo: 30, hi: 90 },
+      { name: 'BASS (35-110)', lo: 35, hi: 110 },
+      { name: 'MID (70-150)', lo: 70, hi: 150 },
+      { name: 'HIGH (100-200)', lo: 100, hi: 200 },
+      { name: 'FULL (20-200)', lo: 20, hi: 200 }
+    ];
+    this.presetIndex = 2; // Default to BASS
+    
+    // Current band settings (Hz)
+    this.bandLo = this.bandPresets[this.presetIndex].lo;
+    this.bandHi = this.bandPresets[this.presetIndex].hi;
     
     // Detection state
     this.smoothedEnergy = 0;
@@ -20,6 +31,45 @@ class BassHitDetector {
     this.lastBoomTime = 0;
     this.cooldownMs = 80;
     this.isBoom = false;
+  }
+  
+  /**
+   * Cycle to next frequency band preset
+   */
+  nextPreset() {
+    this.presetIndex = (this.presetIndex + 1) % this.bandPresets.length;
+    const preset = this.bandPresets[this.presetIndex];
+    this.bandLo = preset.lo;
+    this.bandHi = preset.hi;
+  }
+  
+  /**
+   * Cycle to previous frequency band preset
+   */
+  prevPreset() {
+    this.presetIndex = (this.presetIndex - 1 + this.bandPresets.length) % this.bandPresets.length;
+    const preset = this.bandPresets[this.presetIndex];
+    this.bandLo = preset.lo;
+    this.bandHi = preset.hi;
+  }
+  
+  /**
+   * Set band directly
+   */
+  setBand(lo, hi) {
+    this.bandLo = lo;
+    this.bandHi = hi;
+    this.presetIndex = -1; // Custom
+  }
+  
+  /**
+   * Get current preset name
+   */
+  getPresetName() {
+    if (this.presetIndex >= 0) {
+      return this.bandPresets[this.presetIndex].name;
+    }
+    return `CUSTOM (${this.bandLo}-${this.bandHi})`;
   }
   
   /**
@@ -141,6 +191,42 @@ class BassCarPanel {
     
     // Last metrics
     this.lastMetrics = { bassEnergy: 0, isBoom: false, bandLo: 0, bandHi: 0 };
+    
+    // Click handler (for frequency band selection)
+    this.canvas.addEventListener('click', (e) => this._onCanvasClick(e));
+  }
+  
+  /**
+   * Handle canvas clicks for frequency band selection
+   */
+  _onCanvasClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // HUD is at top, ~44px tall
+    if (y > 44) return;
+    
+    const w = rect.width;
+    const centerX = w / 2;
+    
+    // Left arrow zone: prevPreset
+    if (x > centerX - 75 && x < centerX - 35) {
+      this.detector.prevPreset();
+      return;
+    }
+    
+    // Center zone: nextPreset
+    if (x > centerX - 35 && x < centerX + 35) {
+      this.detector.nextPreset();
+      return;
+    }
+    
+    // Right arrow zone: nextPreset
+    if (x > centerX + 35 && x < centerX + 75) {
+      this.detector.nextPreset();
+      return;
+    }
   }
   
   /**
@@ -580,10 +666,27 @@ class BassCarPanel {
     ctx.fillStyle = colors.accentA;
     ctx.fillRect(50, 20, bassBar, 6);
     
-    // Center frequency band
+    // Center frequency band selector (clickable)
+    const centerX = w / 2;
+    const presetName = this.detector.getPresetName();
+    
+    // Left arrow (clickable)
+    ctx.fillStyle = colors.text;
+    ctx.textAlign = 'right';
+    ctx.font = '14px monospace';
+    ctx.fillText('◀', centerX - 55, 23);
+    
+    // Preset name + band info
     ctx.fillStyle = colors.textMuted;
     ctx.textAlign = 'center';
-    ctx.fillText(`${m.bandLo}–${m.bandHi}Hz`, w / 2, 23);
+    ctx.font = '11px monospace';
+    ctx.fillText(presetName, centerX, 23);
+    
+    // Right arrow (clickable)
+    ctx.fillStyle = colors.text;
+    ctx.textAlign = 'left';
+    ctx.font = '14px monospace';
+    ctx.fillText('▶', centerX + 50, 23);
     
     // BOOM indicator (right)
     if (m.isBoom || this.headlightFlare > 0.3) {
