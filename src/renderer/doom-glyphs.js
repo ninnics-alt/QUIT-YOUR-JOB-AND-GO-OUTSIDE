@@ -98,27 +98,34 @@ const DoomGlyphs = {
     }
 
     // --- Micro glyph text ---
-    ctx.globalAlpha = alpha * 1.0;
+    ctx.globalAlpha = 1.0;
     ctx.fillStyle = '#FF0000';  // Pure bright red
-    ctx.font = 'bold 16px monospace';
+    ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const textRng = DoomGlyphs._seededRNG(0x42cafe);
-    const glyphCount = 8;  // Fixed count for visibility
+    // Place glyphs in specific visible locations within the panel
+    const glyphs = [
+      { x: 0.15, y: 0.2 },
+      { x: 0.5, y: 0.2 },
+      { x: 0.85, y: 0.2 },
+      { x: 0.3, y: 0.5 },
+      { x: 0.7, y: 0.5 },
+      { x: 0.15, y: 0.8 },
+      { x: 0.5, y: 0.8 },
+      { x: 0.85, y: 0.8 }
+    ];
 
-    for (let i = 0; i < glyphCount; i++) {
+    glyphs.forEach((pos, i) => {
       const glyph = DoomGlyphs.GLYPH_STRINGS[i % DoomGlyphs.GLYPH_STRINGS.length];
-      const tx = x + cellPx + (i % 4) * (w / 4);
-      const ty = y + cellPx + Math.floor(i / 4) * (h / 2);
-      const rot = (textRng() - 0.5) * 0.15;
+      const tx = x + pos.x * w;
+      const ty = y + pos.y * h;
 
       ctx.save();
       ctx.translate(tx, ty);
-      ctx.rotate(rot);
       ctx.fillText(glyph, 0, 0);
       ctx.restore();
-    }
+    });
 
     ctx.restore();
   },
