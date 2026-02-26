@@ -476,21 +476,7 @@ class BassCarPanel {
       }
     }
     
-    // Lane markers (scrolling dashes)
-    ctx.strokeStyle = colors.textMuted;
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.5;
-    const markerGap = 60;
-    const markerLen = 30;
-    const markerScroll = this.roadScroll % (markerGap + markerLen);
-    for (let y = roadY; y < h; y += (markerGap + markerLen)) {
-      const markerY = y - markerScroll;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.5, markerY);
-      ctx.lineTo(w * 0.5, markerY + markerLen);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
+    // Lane markers removed for cleaner road
     
     ctx.restore();
   }
