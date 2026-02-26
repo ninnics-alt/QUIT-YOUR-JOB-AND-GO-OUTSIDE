@@ -15,10 +15,10 @@ class BassHitDetector {
     // Detection state
     this.smoothedEnergy = 0;
     this.emaAlpha = 0.10;
-    this.sensitivity = 1.0;
-    this.threshold = 0.15;
+    this.sensitivity = 50.0;        // Extreme sensitivity
+    this.threshold = 0.00001;       // Nearly zero threshold
     this.lastBoomTime = 0;
-    this.cooldownMs = 120;
+    this.cooldownMs = 80;
     this.isBoom = false;
   }
   
@@ -93,8 +93,8 @@ class BassCarPanel {
     // Animation state (preallocated)
     this.suspensionY = 0;
     this.suspensionVel = 0;
+    this.impactScale = 0; // Boom causes car to expand
     this.bodySquash = 0;
-    this.bodySquashVel = 0;
     this.cameraShakeX = 0;
     this.cameraShakeY = 0;
     this.wheelSpin = 0;
@@ -104,11 +104,11 @@ class BassCarPanel {
     this.wheelTilt = 0;
     this.wheelTiltVel = 0;
     
-    // Physics params (spring constants tuned for px/sec units)
-    this.suspensionStiffness = 150;
-    this.suspensionDamping = 22;
-    this.squashStiffness = 180;
-    this.squashDamping = 24;
+    // Physics params (spring constants for visible snap)
+    this.suspensionStiffness = 180;
+    this.suspensionDamping = 24;
+    this.squashStiffness = 200;
+    this.squashDamping = 28;
     this.wheelTiltStiffness = 140;
     this.wheelTiltDamping = 20;
     this.baseRoadSpeed = 1.0;
@@ -116,6 +116,10 @@ class BassCarPanel {
     // User controls
     this.shakeIntensity = 1.0;
     this.speedMultiplier = 1.0;
+    
+    // Timing
+    this.lastNow = performance.now();
+    this.boomFlashUntil = 0;
     
     // Cached shapes (rebuilt on resize/theme change)
     this.carBody = null;
@@ -224,18 +228,15 @@ class BassCarPanel {
   }
   
   /**
-   * Trigger BOOM impulse
+   * Trigger BOOM impulse (always produce visible motion)
    */
   _triggerBoom(strength) {
-    // Suspension impulse (px/sec) - downward bounce
-    this.suspensionVel -= strength * 320 * this.shakeIntensity;
+    // Impact scale - car expands outward when bass hits (DRAMATIC)
+    this.impactScale = 0.80 * this.shakeIntensity; // Will make car 80% bigger
     
-    // Body squash impulse (scale change per sec)
-    this.bodySquashVel -= strength * 2.5 * this.shakeIntensity;
-    
-    // Camera shake
-    this.cameraShakeX = (Math.random() - 0.5) * 10 * strength * this.shakeIntensity;
-    this.cameraShakeY = (Math.random() - 0.5) * 10 * strength * this.shakeIntensity;
+    // Camera shake (always add some)
+    this.cameraShakeX += (Math.random() - 0.5) * 6 * this.shakeIntensity;
+    this.cameraShakeY += (Math.random() - 0.5) * 4 * this.shakeIntensity;
     
     // Road speed burst
     this.roadSpeed = this.baseRoadSpeed * (1 + strength * 2) * this.speedMultiplier;
@@ -250,39 +251,41 @@ class BassCarPanel {
   /**
    * Update physics (critically damped springs) - F = -kx - cv
    */
-  _updatePhysics(dt) {
+  _updatePhysics(dtSec) {
     // Suspension spring (vertical) - units: px, px/sec
     const suspAccel = (-this.suspensionStiffness * this.suspensionY) - (this.suspensionDamping * this.suspensionVel);
-    this.suspensionVel += suspAccel * dt;
-    this.suspensionY += this.suspensionVel * dt;
+    this.suspensionVel += suspAccel * dtSec;
+    this.suspensionY += this.suspensionVel * dtSec;
     
-    // Body squash (scale compression) - units: scale, scale/sec
-    const squashAccel = (-this.squashStiffness * this.bodySquash) - (this.squashDamping * this.bodySquashVel);
-    this.bodySquashVel += squashAccel * dt;
-    this.bodySquash += this.bodySquashVel * dt;
+    // Decay floor to prevent jitter
+    if (Math.abs(this.suspensionY) < 0.05 && Math.abs(this.suspensionVel) < 0.05) {
+      this.suspensionY = 0;
+      this.suspensionVel = 0;
+    }
+    
+    // Impact scale decay (car shrinks back to normal)
+    this.impactScale *= 0.92;
     
     // Wheel tilt wobble - units: deg, deg/sec
     const tiltAccel = (-this.wheelTiltStiffness * this.wheelTilt) - (this.wheelTiltDamping * this.wheelTiltVel);
-    this.wheelTiltVel += tiltAccel * dt;
-    this.wheelTilt += this.wheelTiltVel * dt;
+    this.wheelTiltVel += tiltAccel * dtSec;
+    this.wheelTilt += this.wheelTiltVel * dtSec;
     
-    // Camera shake decay (per-frame exponential)
-    const shakeDecay = Math.pow(0.80, dt * 60);
-    this.cameraShakeX *= shakeDecay;
-    this.cameraShakeY *= shakeDecay;
+    // Camera shake decay
+    this.cameraShakeX *= 0.88;
+    this.cameraShakeY *= 0.88;
     
     // Road speed decay back to base
-    const speedDecay = Math.pow(0.98, dt * 60);
-    this.roadSpeed = this.roadSpeed * speedDecay + this.baseRoadSpeed * this.speedMultiplier * (1 - speedDecay);
+    this.roadSpeed = this.roadSpeed * 0.98 + this.baseRoadSpeed * this.speedMultiplier * 0.02;
     
     // Wheel spin
-    this.wheelSpin += this.roadSpeed * dt * 5;
+    this.wheelSpin += this.roadSpeed * dtSec * 5;
     
     // Road scroll
-    this.roadScroll += this.roadSpeed * dt * 100;
+    this.roadScroll += this.roadSpeed * dtSec * 100;
     
-    // Glow decay (per-frame exponential)
-    this.glowPulse *= Math.pow(0.95, dt * 60);
+    // Glow decay
+    this.glowPulse *= 0.92;
   }
   
   /**
@@ -384,10 +387,9 @@ class BassCarPanel {
     // Car position with suspension bounce
     ctx.translate(this.carX, this.carY + this.suspensionY);
     
-    // Body squash (scale compression) - compress vertically on impact
-    const squashY = 1 + this.bodySquash * 0.15; // negative bodySquash = vertical compression
-    const squashX = 1 - this.bodySquash * 0.08; // negative bodySquash = horizontal expansion
-    ctx.scale(squashX, squashY);
+    // Impact scale - car grows bigger when bass hits
+    const carScale = 1 + this.impactScale;
+    ctx.scale(carScale, carScale);
     
     // Wheel tilt
     ctx.rotate(this.wheelTilt * Math.PI / 180);
@@ -494,7 +496,7 @@ class BassCarPanel {
   }
   
   /**
-   * Draw UI readout
+   * Draw UI readout with debug info
    */
   _drawReadout() {
     const { w, h } = this.drawRect;
@@ -507,8 +509,23 @@ class BassCarPanel {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     
-    const text = `BASS: ${m.bassEnergy.toFixed(2)} | ${m.isBoom ? 'BOOM!' : '----'} | ${m.bandLo}-${m.bandHi}Hz`;
-    ctx.fillText(text, 8, 8);
+    // Debug readout
+    const bass = m.bassEnergy.toFixed(3);
+    const transient = (m.bassEnergy - m.smoothEnergy).toFixed(3);
+    const boom = m.isBoom ? '1' : '0';
+    const impactScale = (1 + this.impactScale).toFixed(2);
+    const suspY = this.suspensionY.toFixed(1);
+    
+    const debugText = `B:${bass} T:${transient} Boom:${boom} Scale:${impactScale} suspY:${suspY}`;
+    ctx.fillText(debugText, 8, 8);
+    
+    // Boom flash (bright indicator)
+    if (this.boomFlashUntil > Date.now()) {
+      ctx.fillStyle = colors.accentA;
+      ctx.font = 'bold 24px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('BOOM!', w * 0.5, h * 0.45);
+    }
   }
   
   /**
@@ -534,6 +551,7 @@ class BassCarPanel {
     const metrics = this.detector.process(freqDataL || this.freqDataL, now);
     this.lastMetrics = {
       bassEnergy: metrics.bassEnergy,
+      smoothEnergy: metrics.smoothedEnergy,
       isBoom: metrics.isBoom,
       bandLo: this.detector.bandLo,
       bandHi: this.detector.bandHi
@@ -541,13 +559,14 @@ class BassCarPanel {
     
     // Trigger boom if detected
     if (metrics.isBoom) {
-      const strength = Math.min(metrics.transient * 2, 1.0);
-      this._triggerBoom(strength);
+      this._triggerBoom(1.0);
+      this.boomFlashUntil = Date.now() + 150; // Flash for 150ms
     }
     
-    // Update physics
-    const dt = 1 / 60; // assume 60fps
-    this._updatePhysics(dt);
+    // Update physics with actual time delta
+    const dtSec = (now - this.lastNow) / 1000; // Convert ms to seconds
+    this.lastNow = now;
+    this._updatePhysics(Math.min(dtSec, 0.05)); // Cap dt to prevent overshoots
     
     // Clear
     ctx.clearRect(0, 0, w, h);
