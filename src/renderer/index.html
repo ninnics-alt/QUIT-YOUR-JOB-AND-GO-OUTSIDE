@@ -18,6 +18,7 @@
         <button id="openDevtools">DevTools</button>
         <button id="openDevicePanel">Devices</button>
         <button id="toggleMinimode">Minimode</button>
+        <button id="detailToggle" title="Toggle detail level: Low/Med/High">Detail: Med</button>
       </div>
       <div class="prefs">
         <label for="themeSelect">Theme</label>
@@ -36,8 +37,8 @@
       <div id="deviceStatus" class="device-status">Device: — | Rate: —</div>
     </header>
 
-    <div id="workspace" class="workspace">
-      <div class="panel-box" data-panel-id="panel-lufs" data-x="20" data-y="20" data-w="520" data-h="170">
+    <div class="metersRow">
+      <div class="panel-box" data-panel-id="panel-lufs">
         <div class="panel-title">LUFS Meters</div>
         <div class="panel-body">
           <section class="meters">
@@ -60,10 +61,9 @@
           </section>
           <div id="signalFlow" class="signal-flow">Input -> Trim -> <span id="kWeightLabel">K-weight</span> -> LUFS</div>
         </div>
-        <div class="resize-handle"></div>
       </div>
 
-      <div class="panel-box" data-panel-id="panel-levels" data-x="560" data-y="20" data-w="380" data-h="200">
+      <div class="panel-box" data-panel-id="panel-levels">
         <div class="panel-title">Levels</div>
         <div class="panel-body">
           <section class="meters">
@@ -82,18 +82,25 @@
             </div>
           </section>
         </div>
-        <div class="resize-handle"></div>
+      </div>
+    </div>
+
+    <div class="vizGrid">
+      <div class="panel-box canvas-panel" data-panel-id="panel-meters">
+        <div class="panel-title">Instrument Meters</div>
+        <div class="panel-body">
+          <canvas id="metersCanvas" width="800" height="120"></canvas>
+        </div>
       </div>
 
-      <div class="panel-box canvas-panel" data-panel-id="panel-wave" data-x="20" data-y="220" data-w="740" data-h="220">
+      <div class="panel-box canvas-panel" data-panel-id="panel-wave">
         <div class="panel-title">Waveform</div>
         <div class="panel-body">
           <canvas id="wave" width="512" height="128"></canvas>
         </div>
-        <div class="resize-handle"></div>
       </div>
 
-      <div class="panel-box" data-panel-id="panel-vectorscope" data-x="780" data-y="220" data-w="440" data-h="260">
+      <div class="panel-box" data-panel-id="panel-vectorscope">
         <div class="panel-title">Vectorscope</div>
         <div class="panel-body">
           <div class="visual-row">
@@ -117,39 +124,63 @@
             </div>
           </div>
         </div>
-        <div class="resize-handle"></div>
       </div>
 
-      <div class="panel-box canvas-panel" data-panel-id="panel-osc" data-x="20" data-y="470" data-w="580" data-h="200">
-        <div class="panel-title">Oscilloscope</div>
-        <div class="panel-body">
-          <canvas id="osc" width="800" height="160"></canvas>
+      <div class="panel-box canvas-panel" data-panel-id="panel-osc">
+        <div class="panel-title">
+          Oscilloscope
+          <div class="osc-controls">
+            <select id="oscMode" class="osc-select" title="Input mode">
+              <option value="time">TIME</option>
+              <option value="xy">XY (Lissajous)</option>
+            </select>
+            <select id="oscDisplay" class="osc-select" title="Channel mode">
+              <option value="stereo" selected>Stereo</option>
+              <option value="mono">Mono (L+R)/2</option>
+              <option value="side">Side (L-R)/2</option>
+            </select>
+            <select id="oscStyle" class="osc-select" title="Trace style">
+              <option value="line">LINE</option>
+              <option value="dots">DOTS</option>
+              <option value="minmax" selected>MIN/MAX</option>
+              <option value="phosphor">PHOSPHOR</option>
+            </select>
+            <select id="oscTrigger" class="osc-select" title="Trigger mode">
+              <option value="off">Trig: OFF</option>
+              <option value="rising" selected>Trig: Rising</option>
+              <option value="falling">Trig: Falling</option>
+            </select>
+            <label class="osc-checkbox" title="Persistence glow effect">
+              <input type="checkbox" id="oscPersistence" checked>
+              <span>Persist</span>
+            </label>
+          </div>
         </div>
-        <div class="resize-handle"></div>
+        <div class="panel-body">
+          <canvas id="osc" width="512" height="128"></canvas>
+          <div id="oscReadout" class="osc-readout"></div>
+        </div>
       </div>
 
-      <div class="panel-box canvas-panel" data-panel-id="panel-specgram" data-x="620" data-y="470" data-w="580" data-h="200">
+      <div class="panel-box canvas-panel" data-panel-id="panel-specgram">
         <div class="panel-title">Spectrogram</div>
         <div class="panel-body">
-          <canvas id="specgram" width="800" height="160"></canvas>
+          <canvas id="specgram" width="512" height="128"></canvas>
         </div>
-        <div class="resize-handle"></div>
       </div>
 
-      <div class="panel-box canvas-panel" data-panel-id="panel-specgraph" data-x="20" data-y="690" data-w="580" data-h="220">
+      <div class="panel-box canvas-panel" data-panel-id="panel-specgraph">
         <div class="panel-title">Spectrograph</div>
         <div class="panel-body">
-          <canvas id="specgraph" width="300" height="320"></canvas>
+          <canvas id="specgraph" width="256" height="256"></canvas>
         </div>
-        <div class="resize-handle"></div>
       </div>
 
-      <div class="panel-box canvas-panel" data-panel-id="panel-goniometer" data-x="620" data-y="690" data-w="580" data-h="220">
+      <div class="panel-box canvas-panel" data-panel-id="panel-goniometer">
         <div class="panel-title">Goniometer</div>
         <div class="panel-body">
-          <canvas id="goniometer" width="300" height="320"></canvas>
+          <canvas id="goniometer" width="256" height="256"></canvas>
         </div>
-        <div class="resize-handle"></div>
       </div>
     </div>
   </div>
@@ -179,7 +210,11 @@
   </div>
 
   <script src="wasmLoader.js"></script>
+  <script src="theme.js"></script>
   <script src="meter-engine.js"></script>
+  <script src="panel-base.js"></script>
+  <script src="panels.js"></script>
+  <script src="meters-simple.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

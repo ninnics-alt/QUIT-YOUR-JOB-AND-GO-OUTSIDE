@@ -5,26 +5,45 @@
 
 :root{
   /* Color Palette - Strict Monochrome */
-  --bg-base: #0A0A0A;
-  --bg-panel: #111111;
-  --bg-elevated: #161616;
-  --border-color: #2A2A2A;
-  --text-primary: #EDEDED;
-  --text-secondary: #777777;
-  --clipping-red: #FF1A1A;
+  --bg-base: #0A0E1A;
+  --bg-panel: #0F1429;
+  --bg-elevated: #141B2E;
+  --border-color: #1A1F3A;
+  --text-primary: #E0E6FF;
+  --text-secondary: #A0A8C8;
+  --text-tertiary: #6B73A0;
+  --accent-blue: #00E5FF;
+  --accent-red: #FF2A4A;
+  --accent-green: #00FF88;
+  --accent-yellow: #FFCC00;
+  --clipping-red: #FF2A4A;
+  --grid-light: #1A1F3A;
+  --grid-dark: #0D1018;
 }
 
 html, body {
   height: 100%;
   margin: 0;
+  padding: 0;
   font-family: 'IBM Plex Mono', monospace;
   background-color: var(--bg-base);
   color: var(--text-primary);
   letter-spacing: 0.08em;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
 }
 
 .container {
-  padding: 20px;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+  min-height: 0;
 }
 
 header {
@@ -32,8 +51,10 @@ header {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 16px;
-  margin-bottom: 20px;
+  padding-bottom: 8px;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 0;
 }
 
 h1 {
@@ -47,17 +68,17 @@ h1 {
 
 .controls {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
 
 select, button {
   font-family: 'IBM Plex Mono', monospace;
-  padding: 8px 12px;
-  border-radius: 0;
-  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  border-radius: 2px;
+  border: 1px solid var(--accent-blue);
   background-color: var(--bg-panel);
-  color: var(--text-primary);
+  color: var(--accent-blue);
   font-size: 11px;
   cursor: pointer;
   transition: all 80ms linear;
@@ -66,21 +87,23 @@ select, button {
 }
 
 select:hover, button:hover {
-  background-color: var(--text-primary);
+  background-color: var(--accent-blue);
   color: var(--bg-panel);
-  border-color: var(--text-primary);
+  border-color: var(--accent-blue);
 }
 
 select:active, button:active {
   border-width: 2px;
-  padding: 7px 11px;
+  padding: 5px 9px;
+  background-color: var(--accent-green);
+  border-color: var(--accent-green);
 }
 
 .prefs {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
-  margin-left: 12px;
+  margin-left: 8px;
 }
 
 .prefs label {
@@ -99,15 +122,16 @@ select:active, button:active {
 /* Meter styling */
 .meters {
   display: flex;
-  gap: 16px;
-  margin-top: 20px;
+  gap: 12px;
+  margin-top: 0;
 }
 
 .meter {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-color);
-  padding: 12px;
-  width: 180px;
+  padding: 10px;
+  flex: 1;
+  min-width: 140px;
 }
 
 .label {
@@ -384,39 +408,165 @@ canvas {
   transform: none;
 }
 
-/* Panel-based workspace layout - BRUTALIST */
-.workspace {
-  position: relative;
-  width: 100%;
-  min-height: 1200px;
-  background-color: var(--bg-base);
+/* Meters row - flexible container for meter panels */
+.metersRow {
+  display: flex;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* Visualizations grid - fills all remaining space */
+.vizGrid {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto repeat(2, 1fr);
+  gap: 8px;
+}
+
+/* Full-width instrument meters panel */
+.vizGrid > [data-panel-id="panel-meters"] {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+/* Visualization panels in 3-column grid, equal height rows */
+.vizGrid > [data-panel-id="panel-wave"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.vizGrid > [data-panel-id="panel-vectorscope"] {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.vizGrid > [data-panel-id="panel-osc"] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.vizGrid > [data-panel-id="panel-specgram"] {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.vizGrid > [data-panel-id="panel-specgraph"] {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.vizGrid > [data-panel-id="panel-goniometer"] {
+  grid-column: 3;
+  grid-row: 3;
 }
 
 .panel-box {
-  position: absolute;
   background-color: var(--bg-panel);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--grid-light);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.1);
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
 }
 
 .panel-title {
   background-color: var(--bg-elevated);
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--grid-light);
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--accent-blue);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Oscilloscope controls */
+.osc-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.osc-select {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 3px 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.osc-select:hover {
+  border-color: var(--accent-blue);
+}
+
+.osc-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.osc-checkbox input[type=\"checkbox\"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.osc-readout {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(10, 14, 26, 0.85);
+  border-top: 1px solid var(--grid-light);
+  padding: 4px 8px;
+  font-size: 9px;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  z-index: 10;
+  height: 56px;
+  box-sizing: border-box;
+}
+
+.osc-readout span {
+  white-space: nowrap;
+}
+
+.osc-readout .value {
+  color: var(--accent-blue);
+  font-weight: 600;
 }
 
 .panel-body {
-  padding: 12px;
-  flex: 1;
-  overflow: auto;
+  padding: 8px;
+  flex: 1 1 auto;
+  overflow: hidden;
   background-color: var(--bg-panel);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
 .panel-body::-webkit-scrollbar {

@@ -3,6 +3,7 @@
 // 1) Try to load Emscripten-generated glue script (ebur128.js) and use `Module.cwrap`.
 // 2) If not found, fall back to direct `fetch('wasm/ebur128.wasm')` + `WebAssembly.instantiate`.
 // Exposes `window.EBUR128` when available. Otherwise `null`.
+// NOTE: WASM files are optional; app works fine with MeterEngine in pure JS.
 
 (async function(){
   window.EBUR128 = null;
@@ -14,7 +15,10 @@
       script.src = 'wasm/ebur128.js';
       script.async = true;
       script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
+      script.onerror = () => {
+        console.log('[wasmLoader] Emscripten glue not found (optional), continuing without WASM');
+        resolve(false);
+      };
       document.head.appendChild(script);
     });
   }
@@ -62,8 +66,15 @@
     }
 
     // 2) Fallback: try plain wasm instantiate
-    const resp = await fetch('wasm/ebur128.wasm');
-    if(!resp.ok) throw new Error('no wasm');
+    let resp;
+    try {
+      resp = await fetch('wasm/ebur128.wasm');
+      if(!resp.ok) throw new Error('wasm fetch returned ' + resp.status);
+    } catch(fetchErr) {
+      console.log('[wasmLoader] WASM fallback not available (optional):', fetchErr.message);
+      throw new Error('no wasm');
+    }
+    
     const bytes = await resp.arrayBuffer();
     const mod = await WebAssembly.instantiate(bytes, {});
     const exports = mod.instance.exports;
