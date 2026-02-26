@@ -613,7 +613,12 @@
       }
     }catch(e){ console.warn('EBUR128 init failed', e); }
 
+    // DOOM FX: Initialize transient detection state
+    let doomLastLowBandEnergy = 0;
+    let doomHitDebounce = 0;
+
     function tick(){
+      const tickStartTime = performance.now();
       analyser.getFloatTimeDomainData(dataArray);
       analyser.getByteFrequencyData(freqData);
       // draw spectrogram and spectrograph
@@ -748,6 +753,36 @@
       if(rmsBarFill) rmsBarFill.style.width = (rmsPct*100)+'%';
       const peakBarFill = document.querySelector('#peakBar .fill');
       if(peakBarFill) peakBarFill.style.width = (peakPct*100)+'%';
+
+      // DOOM FX: Update reactive effects (only when DOOM theme active)
+      if(window.DOOM_FX && window.THEME && window.THEME.currentPalette === 'doom'){
+        const dt = (performance.now() - tickStartTime) / 1000;
+        
+        // Update heat distortion from low-band energy
+        analyserL.getFloatFrequencyData(freqDataL);
+        analyserR.getFloatFrequencyData(freqDataR);
+        window.DOOM_FX.updateHeatFromFreq(freqDataL, sampleRate);
+        
+        // Transient detection: compare low-band energy delta
+        const currentLowBandEnergy = window.DOOM_FX.prevLowBandEnergy;
+        const delta = Math.max(0, currentLowBandEnergy - doomLastLowBandEnergy);
+        const hitStrength = Math.min(1, delta / window.DOOM_FX.HIT_THRESHOLD || 0);
+        
+        if(delta > window.DOOM_FX.HIT_THRESHOLD && doomHitDebounce <= 0 && stats.peakDb > -12){
+          window.DOOM_FX.trigger(hitStrength);
+          doomHitDebounce = 0.1; // 100ms debounce
+        }
+        doomHitDebounce -= dt;
+        doomLastLowBandEnergy = currentLowBandEnergy;
+        
+        // Update decay for shockT, flareT, heatT
+        window.DOOM_FX.updateReactive(dt);
+        
+        // Debug output if enabled
+        if(window.DEBUG_DOOMFX && window.DOOM_FX){
+          // Optional: console.log would go here for debugging
+        }
+      }
 
       // Render Bass Car Panel (with frequency data for bass detection)
       if(bassCarPanel && freqDataL && freqDataR){
@@ -1020,41 +1055,61 @@
         vsCtx.save();
         vsCtx.strokeStyle = traceColor;
         vsCtx.fillStyle = traceColor;
-        vsCtx.globalAlpha = 0.25;
-        vsCtx.shadowBlur = 4;
-        vsCtx.shadowColor = traceColor;
-        if(vsStyle === 'dots'){
-          for(let i = 0; i < vsPointCount; i++){
-            const px = vsPointsX[i];
-            const py = vsPointsY[i];
-            vsCtx.fillRect(px - vsDotSize, py - vsDotSize, vsDotSize * 2, vsDotSize * 2);
+        
+        // DOOM theme: charred phosphor effect
+        const isDoom = window.THEME && window.THEME.currentPalette === 'doom';
+        
+        if (isDoom && window.DOOM_FX) {
+          // Convert point arrays to points object for charred phosphor
+          const points = [];
+          for (let i = 0; i < vsPointCount; i++) {
+            points.push({ x: vsPointsX[i], y: vsPointsY[i] });
           }
-        }else{
-          vsCtx.lineWidth = 2.4;
-          vsCtx.beginPath();
-          vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
-          for(let i = 1; i < vsPointCount; i++){
-            vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
+          window.DOOM_FX.drawCharedPhosphorTrace(vsCtx, points, traceColor, 1.2, 4);
+        } else {
+          // Standard rendering
+          vsCtx.globalAlpha = 0.25;
+          vsCtx.shadowBlur = 4;
+          vsCtx.shadowColor = traceColor;
+          // PS2 theme: chunkier traces
+          const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+          const bloomWidth = isPS2 ? 3.0 : 2.4;
+          const mainWidth = isPS2 ? 1.6 : 1.1;
+          if(vsStyle === 'dots'){
+            const dotScale = isPS2 ? 2.5 : 2;
+            for(let i = 0; i < vsPointCount; i++){
+              const px = vsPointsX[i];
+              const py = vsPointsY[i];
+              vsCtx.fillRect(px - vsDotSize * dotScale / 2, py - vsDotSize * dotScale / 2, vsDotSize * dotScale, vsDotSize * dotScale);
+            }
+          }else{
+            vsCtx.lineWidth = bloomWidth;
+            vsCtx.beginPath();
+            vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
+            for(let i = 1; i < vsPointCount; i++){
+              vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
+            }
+            vsCtx.stroke();
           }
-          vsCtx.stroke();
-        }
 
-        vsCtx.globalAlpha = 0.9;
-        vsCtx.shadowBlur = 0;
-        if(vsStyle === 'dots'){
-          for(let i = 0; i < vsPointCount; i++){
-            const px = vsPointsX[i];
-            const py = vsPointsY[i];
-            vsCtx.fillRect(px - vsDotSize * 0.5, py - vsDotSize * 0.5, vsDotSize, vsDotSize);
+          vsCtx.globalAlpha = 0.9;
+          vsCtx.shadowBlur = 0;
+          if(vsStyle === 'dots'){
+            const dotScale = isPS2 ? 1.5 : 1;
+            for(let i = 0; i < vsPointCount; i++){
+              const px = vsPointsX[i];
+              const py = vsPointsY[i];
+              vsCtx.fillRect(px - vsDotSize * 0.5 * dotScale, py - vsDotSize * 0.5 * dotScale, vsDotSize * dotScale, vsDotSize * dotScale);
+            }
+          }else{
+            vsCtx.lineWidth = mainWidth;
+            vsCtx.beginPath();
+            vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
+            for(let i = 1; i < vsPointCount; i++){
+              vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
+            }
+            vsCtx.stroke();
           }
-        }else{
-          vsCtx.lineWidth = 1.1;
-          vsCtx.beginPath();
-          vsCtx.moveTo(vsPointsX[0], vsPointsY[0]);
-          for(let i = 1; i < vsPointCount; i++){
-            vsCtx.lineTo(vsPointsX[i], vsPointsY[i]);
-          }
-          vsCtx.stroke();
         }
         vsCtx.restore();
       }
@@ -1105,6 +1160,24 @@
     vsCtx.lineTo(corrX + 4, scaleY - 2);
     vsCtx.closePath();
     vsCtx.fill();
+    
+    // Apply theme overlays (scanlines, noise, glitter)
+    if (window.CanvasOverlays) {
+      const detailNum = detailLevel === 'high' ? 2 : (detailLevel === 'med' ? 1 : 0);
+      const time = performance.now() / 1000;
+      window.CanvasOverlays.applyThemeOverlays(vsCtx, w, h, detailNum, time);
+    }
+    
+    // DOOM reactive effects (shockwave + border flare)
+    if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      vsCtx.save();
+      vsCtx.beginPath();
+      vsCtx.rect(pad, pad, w - pad * 2, h - pad * 2);
+      vsCtx.clip();
+      window.DOOM_FX.drawShockwave(vsCtx, w, h);
+      window.DOOM_FX.drawBorderFlare(vsCtx, w, h, pad);
+      vsCtx.restore();
+    }
   }
 
   // ========== OSCILLOSCOPE PANEL ==========
@@ -1379,6 +1452,24 @@
         
         if(triggerIdx >= 0) this.drawTriggerMarker(ctx, rect);
       }
+      
+      // Apply theme overlays (scanlines, noise, glitter)
+      if (window.CanvasOverlays) {
+        const detailNum = this.detailLevel === 'high' ? 2 : (this.detailLevel === 'med' ? 1 : 0);
+        const time = performance.now() / 1000;
+        window.CanvasOverlays.applyThemeOverlays(ctx, w, h, detailNum, time);
+      }
+      
+      // DOOM reactive effects (shockwave + border flare)
+      if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rect.x, rect.y, rect.w, rect.h);
+        ctx.clip();
+        window.DOOM_FX.drawShockwave(ctx, w, h);
+        window.DOOM_FX.drawBorderFlare(ctx, w, h, 1);
+        ctx.restore();
+      }
     }
     
     drawGrid(ctx, rect) {
@@ -1418,12 +1509,40 @@
     drawWaveform(data, startIdx, color, ctx, rect) {
       const style = this.style;
       
+      // DOOM theme: use charred phosphor effect for all styles
+      if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+        this.drawDoomCharedPhosphor(data, startIdx, color, ctx, rect);
+        return;
+      }
+      
       if(style === 'line') {
         this.drawLine(data, startIdx, color, ctx, rect);
       } else if(style === 'dots') {
         this.drawDots(data, startIdx, color, ctx, rect);
       } else if(style === 'minmax') {
         this.drawMinMax(data, startIdx, color, ctx, rect);
+      }
+    }
+    
+    drawDoomCharedPhosphor(data, startIdx, color, ctx, rect) {
+      // Build points array from waveform data
+      const points = [];
+      const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
+      
+      for(let x = 0; x < rect.w; x++) {
+        const idx = startIdx + x * samplesPerPixel;
+        if(idx >= data.length) break;
+        
+        const v = data[idx];
+        const y = rect.y + (0.5 - v * 0.45) * rect.h;
+        const xPos = rect.x + x;
+        
+        points.push({ x: xPos, y: y });
+      }
+      
+      // Draw charred phosphor: thick halo + thin bright core
+      if (points.length > 0) {
+        window.DOOM_FX.drawCharedPhosphorTrace(ctx, points, color, 1.5, 4);
       }
     }
     
@@ -1450,7 +1569,9 @@
     
     drawLine(data, startIdx, color, ctx, rect) {
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
+      // PS2 theme: chunkier traces
+      const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+      ctx.lineWidth = isPS2 ? 2.0 : 1.5;
       ctx.beginPath();
       
       const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
@@ -1472,6 +1593,9 @@
     
     drawDots(data, startIdx, color, ctx, rect, dotSize = this.dotSize) {
       ctx.fillStyle = color;
+      // PS2 theme: chunkier dots
+      const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+      const finalDotSize = isPS2 ? dotSize + 0.5 : dotSize;
       
       const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
       
@@ -1483,13 +1607,15 @@
         const y = rect.y + (0.5 - v * 0.45) * rect.h;
         const xPos = rect.x + x;
         
-        ctx.fillRect(xPos - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
+        ctx.fillRect(xPos - finalDotSize / 2, y - finalDotSize / 2, finalDotSize, finalDotSize);
       }
     }
     
     drawMinMax(data, startIdx, color, ctx, rect) {
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
+      // PS2 theme: chunkier traces
+      const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+      ctx.lineWidth = isPS2 ? 1.5 : 1;
       
       const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
       
@@ -1664,6 +1790,19 @@
     }
     // copy buffer to visible canvas (CSS pixels)
     specCtx.drawImage(specBuf, 0, 0, w, h);
+    
+    // Apply theme overlays (scanlines, noise, glitter)
+    if (window.CanvasOverlays) {
+      const detailNum = detailLevel === 'high' ? 2 : (detailLevel === 'med' ? 1 : 0);
+      const time = performance.now() / 1000;
+      window.CanvasOverlays.applyThemeOverlays(specCtx, w, h, detailNum, time);
+    }
+    
+    // DOOM reactive effects (shockwave + border flare)
+    if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      window.DOOM_FX.drawShockwave(specCtx, w, h);
+      window.DOOM_FX.drawBorderFlare(specCtx, w, h, 0);
+    }
   }
 
   function drawSpecGraph(freq){
@@ -1739,9 +1878,65 @@
     specGraphCtx.textAlign = 'left';
     specGraphCtx.textBaseline = 'top';
     specGraphCtx.fillText('Frequency Response (0 - ' + (nyquist/1000).toFixed(0) + 'kHz)', 5, 3);
+    
+    // Apply theme overlays (scanlines, noise, glitter)
+    if (window.CanvasOverlays) {
+      const detailNum = detailLevel === 'high' ? 2 : (detailLevel === 'med' ? 1 : 0);
+      const time = performance.now() / 1000;
+      window.CanvasOverlays.applyThemeOverlays(specGraphCtx, w, h, detailNum, time);
+    }
+    
+    // DOOM reactive effects (shockwave + border flare)
+    if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      window.DOOM_FX.drawShockwave(specGraphCtx, w, h);
+      window.DOOM_FX.drawBorderFlare(specGraphCtx, w, h, 0);
+    }
   }
 
   function colorForValue(v){
+    // DOOM theme: inferno-like colormap (black→red→orange→yellow→white)
+    if (window.THEME && window.THEME.currentPalette === 'doom') {
+      // Inferno colormap approximation: 5-point gradient
+      const val = Math.max(0, Math.min(1, v)); // Clamp to 0-1
+      if (val < 0.2) {
+        // Black → Red (0.0 - 0.2)
+        const t = val / 0.2; // 0-1 in this segment
+        const r = Math.round(50 + t * 150); // 50→200
+        const g = Math.round(10 + t * 20);  // 10→30
+        const b = Math.round(20 + t * 30);  // 20→50
+        return `rgb(${r}, ${g}, ${b})`;
+      } else if (val < 0.4) {
+        // Red → Orange (0.2 - 0.4)
+        const t = (val - 0.2) / 0.2;
+        const r = Math.round(200 + t * 55); // 200→255
+        const g = Math.round(30 + t * 90);  // 30→120
+        const b = Math.round(50 - t * 50);  // 50→0
+        return `rgb(${r}, ${g}, ${b})`;
+      } else if (val < 0.6) {
+        // Orange → Yellow (0.4 - 0.6)
+        const t = (val - 0.4) / 0.2;
+        const r = 255;
+        const g = Math.round(120 + t * 135); // 120→255
+        const b = 0;
+        return `rgb(${r}, ${g}, ${b})`;
+      } else if (val < 0.8) {
+        // Yellow → Light Yellow (0.6 - 0.8)
+        const t = (val - 0.6) / 0.2;
+        const r = 255;
+        const g = 255;
+        const b = Math.round(0 + t * 100); // 0→100
+        return `rgb(${r}, ${g}, ${b})`;
+      } else {
+        // Light Yellow → White (0.8 - 1.0)
+        const t = (val - 0.8) / 0.2;
+        const r = 255;
+        const g = 255;
+        const b = Math.round(100 + t * 155); // 100→255
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+    }
+    
+    // Default HSL colormap for other themes
     const hue = Math.round((1 - v) * 240); // blue->red
     const sat = 85; const light = Math.round(30 + v*40);
     return `hsl(${hue}, ${sat}%, ${light}%)`;

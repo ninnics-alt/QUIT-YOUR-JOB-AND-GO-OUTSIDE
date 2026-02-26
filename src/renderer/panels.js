@@ -86,6 +86,12 @@ class WaveformPanel extends Panel {
       UIHelpers.drawGrid(parentCtx, this.x, contentY, this.width, contentH, contentH / 4, contentH / 16 / 4);
     }
 
+    // DOOM theme: Glyph grid overlay (after grid so visible)
+    if (typeof DoomGlyphs !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const dpr = window.devicePixelRatio || 1;
+      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.25);
+    }
+
     // Centerline (brighter)
     this.centerlineY = contentY + contentH / 2;
     parentCtx.strokeStyle = colors.accentBlue;
@@ -512,6 +518,12 @@ class SpectrumPanel extends Panel {
     // Grid + axes
     this._drawGrid(parentCtx, drawX, drawY, drawW, drawH, axisH);
 
+    // DOOM theme: Glyph grid overlay (after grid so visible)
+    if (typeof DoomGlyphs !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const dpr = window.devicePixelRatio || 1;
+      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.25);
+    }
+
     // Draw spectrum
     this._drawSpectrum(parentCtx, drawX, drawY, drawW, drawH);
 
@@ -784,6 +796,18 @@ class VectorScopePanel extends Panel {
     // Circular grid rings
     if (this.detailLevel !== 'low') {
       this._drawCircularGrid(parentCtx, centerX, centerY, radius);
+    }
+
+    // DOOM theme: Glyph grid overlay (after grid so visible)
+    if (typeof DoomGlyphs !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const dpr = window.devicePixelRatio || 1;
+      DoomGlyphs.drawGlyphGrid(parentCtx, this.x, contentY, this.width, contentH, dpr, 160, 0.30);
+    }
+
+    // DOOM theme: Sigil calibration rings
+    if (typeof DoomSigils !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const time = performance.now() / 1000;
+      DoomSigils.drawCalibration(parentCtx, centerX, centerY, radius, time);
     }
 
     // Clipping boundary (circle at 1.0)

@@ -56,17 +56,26 @@ class GlitterLayer {
     this.tile.height = this.tileSize;
     const ctx = this.tile.getContext('2d');
     
+    // Get theme colors
+    const theme = window.THEME || {};
+    const colors = theme.colors || {};
+    const accentA = colors.accentA || '#FF4FD8';
+    const accentB = colors.accentB || '#D4A5FF';
+    
     // Clear
     ctx.clearRect(0, 0, this.tileSize, this.tileSize);
     
-    // Add faint noise gradient
+    // Add faint noise gradient using theme colors
     const grad = ctx.createRadialGradient(
       this.tileSize / 2, this.tileSize / 2, 0,
       this.tileSize / 2, this.tileSize / 2, this.tileSize / 2
     );
     grad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-    grad.addColorStop(0.5, 'rgba(255, 79, 216, 0.05)');
-    grad.addColorStop(1, 'rgba(125, 249, 255, 0.04)');
+    // Use theme accent colors for gradient
+    const [r1, g1, b1] = this._parseColor(accentA);
+    const [r2, g2, b2] = this._parseColor(accentB);
+    grad.addColorStop(0.5, `rgba(${r1}, ${g1}, ${b1}, 0.05)`);
+    grad.addColorStop(1, `rgba(${r2}, ${g2}, ${b2}, 0.04)`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, this.tileSize, this.tileSize);
     
@@ -236,6 +245,12 @@ class GlitterLayer {
       const size = baseSize * (1 + pulse * 0.5);
       
       if (alpha > 0.005) {
+        // Get theme colors
+        const theme = window.THEME || {};
+        const colors = theme.colors || {};
+        const accentA = colors.accentA || '#FF4FD8';
+        const accentB = colors.accentB || '#D4A5FF';
+        
         // Draw sparkle with glow
         ctx.globalAlpha = alpha;
         
@@ -247,10 +262,10 @@ class GlitterLayer {
         ctx.arc(px, py, size, 0, Math.PI * 2);
         ctx.fill();
         
-        // Inner bright core
+        // Inner bright core - use theme colors
         ctx.shadowBlur = 0;
         ctx.globalAlpha = alpha * 1.5;
-        ctx.fillStyle = i % 3 === 0 ? '#FF4FD8' : (i % 3 === 1 ? '#7DF9FF' : '#FFF');
+        ctx.fillStyle = i % 3 === 0 ? accentA : (i % 3 === 1 ? accentB : '#FFF');
         ctx.beginPath();
         ctx.arc(px, py, size * 0.5, 0, Math.PI * 2);
         ctx.fill();
@@ -261,6 +276,20 @@ class GlitterLayer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.shadowBlur = 0;
+  }
+  
+  /**
+   * Parse hex color to RGB components
+   * @param {string} hexColor - Hex color string (e.g., '#FF4FD8')
+   * @returns {number[]} - [r, g, b] array
+   */
+  _parseColor(hexColor) {
+    if (!hexColor || !hexColor.startsWith('#')) return [255, 255, 255];
+    const hex = hexColor.slice(1);
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return [r, g, b];
   }
 }
 

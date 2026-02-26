@@ -182,8 +182,40 @@ class GoniometerPanel {
     // Draw overlays
     this._drawOverlays(cx, cy, colors);
     
+    // DOOM theme: Glyph grid overlay (after overlays so visible)
+    if (typeof DoomGlyphs !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const dpr = this.dpr || 1;
+      DoomGlyphs.drawGlyphGrid(this.ctx, 0, 0, w, h, dpr, 160, 0.25);
+    }
+    
+    // DOOM theme: Sigil calibration rings
+    if (typeof DoomSigils !== 'undefined' && window.THEME && window.THEME.currentPalette === 'doom') {
+      const maxR = Math.min(w / 2, h / 2) - 20;
+      const time = performance.now() / 1000;
+      DoomSigils.drawCalibration(this.ctx, cx, cy, maxR, time);
+    }
+    
     // Draw HUD
     this._drawHUD(w, h, colors);
+    
+    // Apply theme overlays (scanlines, noise, glitter)
+    if (window.CanvasOverlays) {
+      const detailNum = window.detailLevel === 'high' ? 2 : (window.detailLevel === 'med' ? 1 : 0);
+      const time = performance.now() / 1000;
+      window.CanvasOverlays.applyThemeOverlays(this.ctx, w, h, detailNum, time);
+    }
+    
+    // DOOM reactive effects (shockwave + border flare)
+    if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      const pad = 10;
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(pad, pad, w - pad * 2, h - pad * 2);
+      this.ctx.clip();
+      window.DOOM_FX.drawShockwave(this.ctx, w, h);
+      window.DOOM_FX.drawBorderFlare(this.ctx, w, h, pad);
+      this.ctx.restore();
+    }
   }
   
   /**
@@ -328,17 +360,35 @@ class GoniometerPanel {
     // Draw new samples to persistence using lighter composite
     this.persistenceCtx.globalCompositeOperation = 'lighter';
     const [acr, acg, acb] = colors.accentA;
+    const traceColor = `rgb(${acr},${acg},${acb})`;
     
-    for (let i = 0; i < this.pointCount - 1; i++) {
-      const x1 = this.pointsX[i], y1 = this.pointsY[i];
-      const x2 = this.pointsX[i + 1], y2 = this.pointsY[i + 1];
-      
-      this.persistenceCtx.strokeStyle = `rgba(${acr},${acg},${acb},0.8)`;
-      this.persistenceCtx.lineWidth = 1.5;
-      this.persistenceCtx.beginPath();
-      this.persistenceCtx.moveTo(x1, y1);
-      this.persistenceCtx.lineTo(x2, y2);
-      this.persistenceCtx.stroke();
+    // PS2 theme: chunkier traces
+    const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+    const isDoom = window.THEME && window.THEME.currentPalette === 'doom';
+    const traceWidth = isPS2 ? 2.0 : (isDoom ? 1.8 : 1.5);
+    
+    // DOOM theme: use charred phosphor effect
+    if (isDoom && window.DOOM_FX && this.pointCount > 1) {
+      // Convert point arrays to points object for charred phosphor
+      const points = [];
+      for (let i = 0; i < this.pointCount; i++) {
+        points.push({ x: this.pointsX[i], y: this.pointsY[i] });
+      }
+      // Draw charred phosphor directly to persistence buffer
+      window.DOOM_FX.drawCharedPhosphorTrace(this.persistenceCtx, points, traceColor, 1.2, 4);
+    } else {
+      // Standard trace rendering
+      for (let i = 0; i < this.pointCount - 1; i++) {
+        const x1 = this.pointsX[i], y1 = this.pointsY[i];
+        const x2 = this.pointsX[i + 1], y2 = this.pointsY[i + 1];
+        
+        this.persistenceCtx.strokeStyle = `rgba(${acr},${acg},${acb},0.8)`;
+        this.persistenceCtx.lineWidth = traceWidth;
+        this.persistenceCtx.beginPath();
+        this.persistenceCtx.moveTo(x1, y1);
+        this.persistenceCtx.lineTo(x2, y2);
+        this.persistenceCtx.stroke();
+      }
     }
     
     this.persistenceCtx.globalCompositeOperation = 'source-over';
@@ -388,6 +438,9 @@ class GoniometerPanel {
     // Draw short segments with varying opacity
     const [acr, acg, acb] = colors.accentA;
     const segmentLength = 8; // short segments
+    // PS2 theme: chunkier traces
+    const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
+    const traceWidth = isPS2 ? 1.7 : 1.2;
     
     for (let i = 0; i < this.pointCount; i++) {
       if ((i + segmentLength) >= this.pointCount) break;
@@ -400,7 +453,7 @@ class GoniometerPanel {
       const opacity = 1.0 - ageRatio * 0.7; // newer segments brighter
       
       this.persistenceCtx.strokeStyle = `rgba(${acr},${acg},${acb},${opacity})`;
-      this.persistenceCtx.lineWidth = 1.2;
+      this.persistenceCtx.lineWidth = traceWidth;
       this.persistenceCtx.beginPath();
       this.persistenceCtx.moveTo(x1, y1);
       this.persistenceCtx.lineTo(x2, y2);
@@ -590,9 +643,10 @@ class GoniometerPanel {
     
     const [textr, textg, textb] = colors.text;
     const [mutedR, mutedG, mutedB] = colors.textMuted;
+    const [bgr, bgg, bgb] = colors.bgInset;
     
     // Bottom HUD background
-    this.ctx.fillStyle = `rgba(0, 0, 0, 0.2)`;
+    this.ctx.fillStyle = `rgba(${bgr}, ${bgg}, ${bgb}, 0.4)`;
     this.ctx.fillRect(0, h - 44, w, 44);
     this.ctx.strokeStyle = colors.border;
     this.ctx.lineWidth = 1;

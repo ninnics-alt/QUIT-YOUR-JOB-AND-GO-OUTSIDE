@@ -6,78 +6,243 @@
 // Define all theme palettes (NO shared object references)
 const THEMES = {
   ps2: {
-    bgPrimary: '#0A0E1A',
-    bgPanel: '#0F1429',
-    bgInset: '#05070D',
-    border: '#1A1F3A',
-    grid: '#0D1018',
-    text: '#E0E6FF',
-    textMuted: '#A0A8C8',
-    accentA: '#00E5FF',
-    accentB: '#00FF88',
-    accentGood: '#00FF88',
-    accentWarn: '#FFCC00',
-    accentBad: '#FF2A4A',
+    // Base colors - PlayStation era inspired
+    bgPrimary: '#000308',
+    bgPanel: '#0A0F1A',
+    bgPanel2: '#0F1422',
+    bgInset: '#020508',
+    border: '#2A3D5A',
+    borderSoft: '#3A4D6A',
+    grid: '#0E1520',
+    text: '#D8E4F8',
+    textMuted: '#8EA4C8',
+    textDim: '#5A6E8E',
+    
+    // PlayStation accents
+    accentA: '#3D8EFF',      // PS2 blue
+    accentB: '#00C8DC',      // Memory card LED cyan
+    accentC: '#9D6FE8',      // PS1 UI magenta hint
+    accentGood: '#4AE88A',   // Soft confirm green
+    accentWarn: '#FFB84D',
+    accentBad: '#FF4757',
+    
+    // PlayStation-era effects
+    glow: 'rgba(61, 142, 255, 0.25)',
+    shadow: 'rgba(0, 0, 0, 0.7)',
+    gridLine: '#1A2838',
+    scanlineOpacity: 0.03,
+    noiseOpacity: 0.02,
+    sparkleOpacity: 0,
+    
+    // Bevel effect tokens
+    bevelLight: 'rgba(100, 140, 200, 0.3)',
+    bevelDark: 'rgba(0, 0, 0, 0.6)',
+    
+    // Console-era effects
+    phosphorStrength: 0.15,
+    ditheringStrength: 0.08,
+    bloomStrength: 0.12,
+    vignetteStrength: 0.25,
+    
+    // Meter colors
+    meterGood: '#4AE88A',
+    meterWarn: '#FFB84D',
+    meterClip: '#FF4757',
+    
+    // Waveform/trace colors - chunkier feel
+    waveformL: '#3D8EFF',
+    waveformR: '#00C8DC',
+    trace: '#3D8EFF',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'ps2',
   },
   
   neon: {
-    bgPrimary: '#07060D',
-    bgPanel: '#0F0B1A',
-    bgInset: '#04030A',
-    border: '#2B1E4A',
-    grid: '#20163A',
-    text: '#F3F0FF',
-    textMuted: '#A89BD6',
-    accentA: '#FF3DF2',
-    accentB: '#00E5FF',
-    accentGood: '#7CFF00',
-    accentWarn: '#FFD400',
-    accentBad: '#FF2A55',
+    // Base colors - DEEP BLUE/BLACK
+    bgPrimary: '#000408',
+    bgPanel: '#050A14',
+    bgPanel2: '#0A0F1C',
+    bgInset: '#000204',
+    border: '#1A3D6B',
+    borderSoft: '#2A4D7B',
+    grid: '#0F1822',
+    text: '#E0F0FF',
+    textMuted: '#7DB1E8',
+    textDim: '#4A7FAD',
+    
+    // Accents - CYAN/MAGENTA
+    accentA: '#00E5FF',
+    accentB: '#FF3DF2',
+    accentGood: '#00FFB3',
+    accentWarn: '#FFD700',
+    accentBad: '#FF2A77',
+    
+    // Effects - STRONG BLOOM/GLOW
+    glow: 'rgba(0, 229, 255, 0.8)',
+    shadow: 'rgba(0, 229, 255, 0.3)',
+    gridLine: '#1A3D6B',
+    scanlineOpacity: 0.15,
+    noiseOpacity: 0.01,
+    sparkleOpacity: 0,
+    
+    // Meter colors
+    meterGood: '#00FFB3',
+    meterWarn: '#FFD700',
+    meterClip: '#FF2A77',
+    
+    // Waveform/trace colors - sharper
+    waveformL: '#00E5FF',
+    waveformR: '#FF3DF2',
+    trace: '#00E5FF',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'neon',
   },
   
   doom: {
-    bgPrimary: '#0B0608',
-    bgPanel: '#140A0E',
-    bgInset: '#050203',
-    border: '#3A1218',
-    grid: '#2A0D12',
-    text: '#F3E6E8',
-    textMuted: '#B18A90',
-    accentA: '#FF2A3A',
-    accentB: '#FF7A00',
-    accentGood: '#7CFF2A',
-    accentWarn: '#FFC000',
-    accentBad: '#FF0033',
+    // Base colors - near-black primary, smoky panels
+    bgPrimary: '#080404',
+    bgPanel: '#120808',
+    bgPanel2: '#1A0E0E',
+    bgInset: '#030101',
+    border: '#2A0808',
+    borderSoft: '#3A1010',
+    grid: '#1A0A0A',
+    text: '#E8E0DC',
+    textMuted: '#A88880',
+    textDim: '#705858',
+    
+    // Hell-tech accents
+    accentA: '#FF3333',      // Danger red - borders/warnings only
+    accentB: '#FF8B33',      // Amber/Orange - numeric readouts
+    accentC: '#CC5533',      // Darker orange for secondary
+    accentGood: '#88DD44',   // Sulfur green - "OK" status (optional)
+    accentWarn: '#FFCC00',   // Hot warning
+    accentBad: '#FF1122',    // Burning red
+    
+    // Effects - reduced intensity grids
+    glow: 'rgba(255, 51, 51, 0.25)',
+    shadow: 'rgba(0, 0, 0, 0.8)',
+    gridLine: '#1A0A0A',
+    scanlineOpacity: 0.04,
+    noiseOpacity: 0.02,
+    sparkleOpacity: 0,
+    
+    // Bevel effect tokens
+    bevelLight: 'rgba(100, 60, 60, 0.2)',
+    bevelDark: 'rgba(0, 0, 0, 0.7)',
+    
+    // Hell-tech visual effect tokens
+    doomEmberOpacity: 0.25,
+    doomHeatHazeStrength: 0.12,
+    doomFlareMs: 150,
+    doomBorderInner: 'rgba(255, 80, 60, 0.4)',
+    doomBorderOuter: 'rgba(40, 15, 15, 0.9)',
+    doomDigitScanlineOpacity: 0.06,
+    
+    // Console-era effects
+    phosphorStrength: 0.2,   // Increased for hell-tech look
+    ditheringStrength: 0.1,
+    bloomStrength: 0.15,
+    vignetteStrength: 0.2,
+    
+    // Meter colors
+    meterGood: '#88DD44',
+    meterWarn: '#FFCC00',
+    meterClip: '#FF1122',
+    
+    // Waveform/trace colors - charred phosphor
+    waveformL: '#FF3333',
+    waveformR: '#FF8B33',
+    trace: '#FF3333',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'doom',
   },
   
   glitter: {
-    bgPrimary: '#0B0710',
-    bgPanel: '#140B1F',
-    bgInset: '#07040B',
-    border: '#3A2554',
+    // Base colors - DARK PURPLE WITH PINK/WHITE
+    bgPrimary: '#0D0611',
+    bgPanel: '#180D24',
+    bgPanel2: '#23152F',
+    bgInset: '#08040C',
+    border: '#4A2962',
+    borderSoft: '#6A4A82',
     grid: '#2A183D',
     text: '#FFF7FF',
-    textMuted: '#D6B6E6',
+    textMuted: '#E8C8FF',
+    textDim: '#B48ACF',
+    
+    // Accents - PINK/WHITE HIGHLIGHTS
     accentA: '#FF4FD8',
-    accentB: '#7DF9FF',
-    accentGood: '#B7FF5A',
-    accentWarn: '#FFD6FF',
-    accentBad: '#FF2A6D',
+    accentB: '#D4A5FF',
+    accentGood: '#C8FF6A',
+    accentWarn: '#FFE5A0',
+    accentBad: '#FF4A8D',
+    
+    // Effects - SOFT GLOWS, SHIMMER, GLITTER
+    glow: 'rgba(255, 79, 216, 0.5)',
+    shadow: 'rgba(255, 79, 216, 0.2)',
+    gridLine: '#4A2962',
+    scanlineOpacity: 0,
+    noiseOpacity: 0.08,
+    sparkleOpacity: 0.6,
+    
+    // Meter colors
+    meterGood: '#C8FF6A',
+    meterWarn: '#FFE5A0',
+    meterClip: '#FF4A8D',
+    
+    // Waveform/trace colors - more variance/shimmer
+    waveformL: '#FF4FD8',
+    waveformR: '#D4A5FF',
+    trace: '#FF9FF0',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'cottoncandy',
   },
   
   nuclear: {
+    // Base colors
     bgPrimary: '#050A06',
     bgPanel: '#07110A',
+    bgPanel2: '#0A1810',
     bgInset: '#020503',
     border: '#0E2B1A',
+    borderSoft: '#1E3B2A',
     grid: '#0A2013',
     text: '#CFFFE0',
     textMuted: '#6DBA86',
+    textDim: '#4A8A5E',
+    
+    // Accents
     accentA: '#00FF66',
     accentB: '#00D1FF',
     accentGood: '#00FF66',
     accentWarn: '#FFB000',
     accentBad: '#FF3355',
+    
+    // Effects
+    glow: 'rgba(0, 255, 102, 0.5)',
+    shadow: 'rgba(0, 255, 102, 0.2)',
+    gridLine: '#0E2B1A',
+    scanlineOpacity: 0.06,
+    noiseOpacity: 0.04,
+    sparkleOpacity: 0,
+    
+    // Meter colors
+    meterGood: '#00FF66',
+    meterWarn: '#FFB000',
+    meterClip: '#FF3355',
+    
+    // Waveform/trace colors
+    waveformL: '#00FF66',
+    waveformR: '#00D1FF',
+    trace: '#00FF66',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'nuclear',
   },
 };
 
@@ -174,6 +339,9 @@ const THEME = {
     
     // Update colors object (create new copy to avoid reference issues)
     this.colors = { ...THEMES[paletteKey] };
+    
+    // Set data-theme attribute on document element for CSS theme-specific styles
+    document.documentElement.setAttribute('data-theme', paletteKey);
     
     // Update CSS variables on :root
     const root = document.documentElement;

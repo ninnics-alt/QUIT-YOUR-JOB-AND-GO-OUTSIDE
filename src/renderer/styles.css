@@ -19,6 +19,272 @@
   --clipping-red: #FF2A4A;
   --grid-light: #1A1F3A;
   --grid-dark: #0D1018;
+  
+  /* Effects */
+  --glow-color: rgba(0, 229, 255, 0.4);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --header-glow: 0px 0px 0px transparent;
+  --border-glow: 0px 0px 0px transparent;
+}
+
+/* NEON ARCADE THEME - Strong bloom, CRT scanlines, chromatic aberration */
+[data-theme="neon"] {
+  --bg-base: #000408;
+  --bg-panel: #050A14;
+  --bg-elevated: #0A0F1C;
+  --border-color: #1A3D6B;
+  --text-primary: #E0F0FF;
+  --text-secondary: #7DB1E8;
+  --text-tertiary: #4A7FAD;
+  --accent-blue: #00E5FF;
+  --accent-red: #FF2A77;
+  --accent-green: #00FFB3;
+  --accent-yellow: #FFD700;
+  --clipping-red: #FF2A77;
+  --grid-light: #1A3D6B;
+  --grid-dark: #0F1822;
+  
+  /* STRONG GLOW EFFECTS */
+  --glow-color: rgba(0, 229, 255, 0.8);
+  --shadow-color: rgba(0, 229, 255, 0.3);
+  --header-glow: 0px 0px 12px rgba(0, 229, 255, 0.6);
+  --border-glow: 0px 0px 8px rgba(0, 229, 255, 0.4);
+}
+
+[data-theme="neon"] h1 {
+  text-shadow: var(--header-glow);
+  color: #00E5FF;
+}
+
+[data-theme="neon"] .panel-title {
+  text-shadow: 0px 0px 8px rgba(0, 229, 255, 0.5);
+}
+
+[data-theme="neon"] canvas,
+[data-theme="neon"] .panel-box {
+  border: 1px solid var(--border-color);
+  box-shadow: var(--border-glow), inset 0 0 20px rgba(0, 229, 255, 0.05);
+}
+
+[data-theme="neon"] select,
+[data-theme="neon"] button {
+  box-shadow: 0px 0px 6px rgba(0, 229, 255, 0.3);
+}
+
+[data-theme="neon"] select:hover,
+[data-theme="neon"] button:hover {
+  box-shadow: 0px 0px 12px rgba(0, 229, 255, 0.6);
+}
+
+/* GLITTER APOCALYPSE THEME - Soft borders, pearly gradients, shimmer */
+[data-theme="glitter"] {
+  --bg-base: #0D0611;
+  --bg-panel: #180D24;
+  --bg-elevated: #23152F;
+  --border-color: #4A2962;
+  --text-primary: #FFF7FF;
+  --text-secondary: #E8C8FF;
+  --text-tertiary: #B48ACF;
+  --accent-blue: #FF4FD8;
+  --accent-red: #FF4A8D;
+  --accent-green: #C8FF6A;
+  --accent-yellow: #FFE5A0;
+  --clipping-red: #FF4A8D;
+  --grid-light: #4A2962;
+  --grid-dark: #2A183D;
+  
+  /* SOFT GLOWS */
+  --glow-color: rgba(255, 79, 216, 0.5);
+  --shadow-color: rgba(255, 79, 216, 0.2);
+  --header-glow: 0px 0px 8px rgba(255, 79, 216, 0.4);
+  --border-glow: 0px 0px 6px rgba(255, 79, 216, 0.3);
+}
+
+[data-theme="glitter"] h1 {
+  text-shadow: var(--header-glow);
+  color: #FF9FF0;
+}
+
+[data-theme="glitter"] .panel-title {
+  text-shadow: 0px 0px 6px rgba(255, 79, 216, 0.4);
+}
+
+[data-theme="glitter"] canvas,
+[data-theme="glitter"] .panel-box {
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: var(--border-glow), inset 0 0 30px rgba(255, 159, 240, 0.08);
+  background: radial-gradient(ellipse at top, rgba(255, 159, 240, 0.03), transparent 60%);
+}
+
+[data-theme="glitter"] select,
+[data-theme="glitter"] button {
+  border-radius: 4px;
+  border-width: 2px;
+  box-shadow: 0px 0px 4px rgba(255, 79, 216, 0.3);
+}
+
+[data-theme="glitter"] select:hover,
+[data-theme="glitter"] button:hover {
+  box-shadow: 0px 0px 10px rgba(255, 79, 216, 0.5);
+}
+
+[data-theme="glitter"] .panel-body {
+  background: linear-gradient(135deg, rgba(255, 159, 240, 0.02), transparent 50%, rgba(212, 165, 255, 0.02));
+}
+
+/* DOOM PROPHET THEME - Hell-tech hardware with burning embers + heat haze */
+[data-theme="doom"] {
+  --bg-base: #080404;
+  --bg-panel: #120808;
+  --bg-elevated: #1A0E0E;
+  --border-color: #2A0808;
+  --text-primary: #E8E0DC;
+  --text-secondary: #A88880;
+  --text-tertiary: #705858;
+  --accent-blue: #FF3333;
+  --accent-red: #FF1122;
+  --accent-green: #88DD44;
+  --accent-yellow: #FFCC00;
+  --accent-orange: #FF8B33;
+  --clipping-red: #FF1122;
+  --grid-light: #1A0A0A;
+  --grid-dark: #0A0505;
+  
+  /* HELL-TECH GLOW - Dark rim + red inner */
+  --glow-color: rgba(255, 51, 51, 0.25);
+  --shadow-color: rgba(0, 0, 0, 0.8);
+  --header-glow: 0px 0px 8px rgba(255, 80, 60, 0.4);
+  --border-glow: 0px 0px 6px rgba(255, 80, 60, 0.3);
+  --border-inner: rgba(255, 80, 60, 0.4);
+  --border-outer: rgba(40, 15, 15, 0.9);
+}
+
+/* Subtle vignette on main container */
+[data-theme="doom"] #app {
+  background: radial-gradient(ellipse at center, transparent 0%, transparent 55%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+[data-theme="doom"] h1 {
+  text-shadow: var(--header-glow);
+  color: #FF5544;
+  letter-spacing: 0.1em;
+}
+
+[data-theme="doom"] .panel-title {
+  text-shadow: 0px 0px 6px rgba(255, 80, 60, 0.3);
+  color: #FF7755;
+}
+
+/* DOOM double-stroke borders: dark rim (outer) + red glow (inner) */
+[data-theme="doom"] canvas,
+[data-theme="doom"] .panel-box {
+  border: 2px solid;
+  border-color: #1A0505;
+  box-shadow: 
+    inset 0px 0px 0px 1px rgba(255, 80, 60, 0.5),
+    0px 0px 8px rgba(255, 50, 40, 0.2),
+    0px 0px 16px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+/* DOOM button styling - red outline, glow only on hover/active */
+[data-theme="doom"] select,
+[data-theme="doom"] button {
+  border: 1px solid #FF3333;
+  box-shadow: none;
+}
+
+[data-theme="doom"] select:hover,
+[data-theme="doom"] button:hover {
+  box-shadow: 0px 0px 8px rgba(255, 80, 60, 0.5);
+  border-color: #FF5544;
+}
+
+[data-theme="doom"] select:active,
+[data-theme="doom"] button:active {
+  box-shadow: 0px 0px 12px rgba(255, 80, 60, 0.7);
+  border-color: #FF6655;
+  background-color: #1A0808;
+}
+
+
+[data-theme="ps2"] {
+  --bg-base: #000308;
+  --bg-panel: #0A0F1A;
+  --bg-elevated: #0F1422;
+  --border-color: #2A3D5A;
+  --text-primary: #D8E4F8;
+  --text-secondary: #8EA4C8;
+  --text-tertiary: #5A6E8E;
+  --accent-blue: #3D8EFF;
+  --accent-red: #FF4757;
+  --accent-green: #4AE88A;
+  --accent-yellow: #FFB84D;
+  --clipping-red: #FF4757;
+  --grid-light: #2A3D5A;
+  --grid-dark: #0E1520;
+  
+  /* SUBTLE PS GLOW */
+  --glow-color: rgba(61, 142, 255, 0.25);
+  --shadow-color: rgba(0, 0, 0, 0.7);
+  --header-glow: 0px 0px 6px rgba(61, 142, 255, 0.3);
+  --border-glow: 0px 0px 4px rgba(61, 142, 255, 0.2);
+}
+
+/* Vignette effect on main container */
+[data-theme="ps2"] #app {
+  background: radial-gradient(ellipse at center, transparent 0%, transparent 50%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+[data-theme="ps2"] h1 {
+  text-shadow: var(--header-glow);
+  color: #5AA4FF;
+  letter-spacing: 0.15em;
+}
+
+[data-theme="ps2"] .panel-title {
+  text-shadow: 0px 0px 4px rgba(61, 142, 255, 0.3);
+  color: #6AB0FF;
+}
+
+/* PS2-era beveled panels */
+[data-theme="ps2"] canvas,
+[data-theme="ps2"] .panel-box {
+  border: none;
+  box-shadow: 
+    inset 1px 1px 0px rgba(100, 140, 200, 0.3),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.6),
+    0px 2px 4px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+/* PS2 button styling */
+[data-theme="ps2"] select,
+[data-theme="ps2"] button {
+  border: 1px solid #3D8EFF;
+  box-shadow: 
+    inset 1px 1px 0px rgba(100, 140, 200, 0.2),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.4),
+    0px 0px 4px rgba(61, 142, 255, 0.2);
+}
+
+[data-theme="ps2"] select:hover,
+[data-theme="ps2"] button:hover {
+  background-color: #0F1B2E;
+  box-shadow: 
+    inset 1px 1px 0px rgba(100, 140, 200, 0.4),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.5),
+    0px 0px 8px rgba(61, 142, 255, 0.4);
+}
+
+[data-theme="ps2"] select:active,
+[data-theme="ps2"] button:active {
+  background-color: #3D8EFF;
+  color: #000308;
+  box-shadow: 
+    inset -1px -1px 0px rgba(100, 140, 200, 0.2),
+    inset 1px 1px 0px rgba(0, 0, 0, 0.6);
 }
 
 html, body {

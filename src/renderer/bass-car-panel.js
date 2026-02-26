@@ -175,6 +175,8 @@ class BassCarPanel {
     this.shockwaveRadius = 0;        // Expanding ring on boom
     this.dustPuffLife = 0;           // Dust cloud opacity
     this.headlightFlare = 0;         // Headlight glow on boom
+    this.shockwaveWidth = 0;         // Horizontal shock wave width
+    this.shockwaveAlpha = 0;         // Horizontal shock wave alpha fade
     
     // Cached shapes (rebuilt on resize/theme change)
     this.carBody = null;
@@ -339,6 +341,11 @@ class BassCarPanel {
     this.shockwaveRadius = 1;
     this.dustPuffLife = 1.0;
     this.headlightFlare = 1.0;
+    
+    // VFX: Horizontal shock line under car
+    this.shockwaveWidth = 0;
+    this.shockwaveAlpha = 1.0;
+    
     this.lastBoomTime = performance.now();
     
     // Road speed burst
@@ -380,6 +387,10 @@ class BassCarPanel {
     // Camera shake decay
     this.cameraShakeX *= 0.88;
     this.cameraShakeY *= 0.88;
+    
+    // Horizontal shock wave animation
+    this.shockwaveWidth += 600 * dtSec;  // Expand outward
+    this.shockwaveAlpha *= 0.88;          // Fade out
     
     // Road speed decay back to base
     this.roadSpeed = this.roadSpeed * 0.98 + this.baseRoadSpeed * this.speedMultiplier * 0.02;
@@ -508,7 +519,8 @@ class BassCarPanel {
     ctx.rotate(this.wheelTilt * Math.PI / 180);
     
     // Undercar shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    const [sr, sg, sb] = UIHelpers._parseRGB(colors.bgInset);
+    ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, 0.5)`;
     ctx.ellipse(0, this.carH * 0.5 + 5, this.carW * 0.45, this.carH * 0.1, 0, 0, Math.PI * 2);
     ctx.fill();
     
@@ -594,6 +606,18 @@ class BassCarPanel {
       ctx.fill();
     }
     
+    // VFX: Horizontal shock line expanding beneath car on boom
+    if (this.shockwaveAlpha > 0.01) {
+      ctx.strokeStyle = colors.accentA;
+      ctx.globalAlpha = this.shockwaveAlpha * 0.7;
+      ctx.lineWidth = Math.max(2, 4 - this.shockwaveWidth * 0.01);
+      ctx.beginPath();
+      ctx.moveTo(-50 - this.shockwaveWidth, this.carH * 0.5);
+      ctx.lineTo(50 + this.shockwaveWidth, this.carH * 0.5);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    
     ctx.restore();
   }
   
@@ -650,7 +674,8 @@ class BassCarPanel {
     const m = this.lastMetrics;
     
     // HUD background (subtle)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+    const [hudr, hudg, hudb] = UIHelpers._parseRGB(colors.bgInset);
+    ctx.fillStyle = `rgba(${hudr}, ${hudg}, ${hudb}, 0.4)`;
     ctx.fillRect(8, 8, w - 16, 28);
     ctx.strokeStyle = colors.border;
     ctx.lineWidth = 1;
@@ -742,14 +767,70 @@ class BassCarPanel {
     this.lastNow = now;
     this._updatePhysics(Math.min(dtSec, 0.05)); // Cap dt to prevent overshoots
     
+    // Update DOOM FX flare system (if theme is DOOM)
+    if (THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      // Trigger flare on transient (bass boost)
+      if (metrics.isBoom) {
+        DOOM_FX.triggerFlare(Math.min(metrics.bassEnergy / 100, 1.0));
+      }
+      DOOM_FX.updateFlare();
+    }
+    
     // Clear
     ctx.clearRect(0, 0, w, h);
     
-    // Draw scene
-    this._drawBackground();
-    this._drawRoad();
-    this._drawCar();
+    // Draw scene with heat distortion applied (DOOM theme only)
+    if (THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      // Wrap scene rendering in heat distortion effect
+      window.DOOM_FX.applyHeatDistortion(ctx, (distortCtx, dw, dh) => {
+        this._drawBackground_Internal(distortCtx);
+        this._drawRoad_Internal(distortCtx);
+        this._drawCar_Internal(distortCtx);
+      }, w, h);
+    } else {
+      // Normal rendering path
+      this._drawBackground();
+      this._drawRoad();
+      this._drawCar();
+    }
+    
+    // Apply DOOM FX embers + haze overlay (on top after scene, but under readout)
+    if (THEME.currentPalette === 'doom' && window.DOOM_FX) {
+      const seed = this.lastMetrics.bandLo + this.lastMetrics.bandHi;
+      DOOM_FX.drawEmbers(ctx, w, h, seed, now, THEME.colors.doomEmberOpacity);
+      DOOM_FX.applyHeatHaze(ctx, w, h, THEME.colors.doomHeatHazeStrength, now);
+      
+      // Draw reactive effects: shockwave + border flare
+      DOOM_FX.drawShockwave(ctx, w, h);
+      DOOM_FX.drawBorderFlare(ctx, w, h, 0);
+    }
+    
     this._drawReadout();
+  }
+  
+  // Internal render helpers for heat distortion wrapping (avoid parameter mismatch)
+  _drawBackground_Internal(ctx) {
+    const { w, h } = this.drawRect;
+    const origCtx = this.ctx;
+    this.ctx = ctx;
+    this._drawBackground();
+    this.ctx = origCtx;
+  }
+  
+  _drawRoad_Internal(ctx) {
+    const { w, h } = this.drawRect;
+    const origCtx = this.ctx;
+    this.ctx = ctx;
+    this._drawRoad();
+    this.ctx = origCtx;
+  }
+  
+  _drawCar_Internal(ctx) {
+    const { w, h } = this.drawRect;
+    const origCtx = this.ctx;
+    this.ctx = ctx;
+    this._drawCar();
+    this.ctx = origCtx;
   }
 }
 
