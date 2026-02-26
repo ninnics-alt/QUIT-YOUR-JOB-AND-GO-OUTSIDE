@@ -43,54 +43,6 @@
     <!-- Glitter underlay canvas (only active in Glitter Apocalypse theme) -->
     <canvas id="glitterCanvas" class="glitter-underlay"></canvas>
 
-    <div class="metersRow">
-      <div class="panel-box" data-panel-id="panel-lufs">
-        <div class="panel-title">LUFS Meters</div>
-        <div class="panel-body">
-          <section class="meters">
-            <div class="meter">
-              <div class="label" title="Integrated loudness with gating">Integrated LUFS</div>
-              <div style="display:flex;align-items:center;gap:8px">
-                <div id="lufs" class="value">—</div>
-                <div id="wasmStatus" class="wasm-status">WASM: —</div>
-                <button id="resetLufs" class="reset">Reset</button>
-              </div>
-            </div>
-            <div class="meter">
-              <div class="label" title="Momentary loudness (400 ms)">Momentary LUFS (400 ms)</div>
-              <div id="lufsM" class="value">—</div>
-            </div>
-            <div class="meter">
-              <div class="label" title="Highest LUFS since reset">Peak LUFS</div>
-              <div id="lufsS" class="value">—</div>
-            </div>
-          </section>
-          <div id="signalFlow" class="signal-flow">Input -> Trim -> <span id="kWeightLabel">K-weight</span> -> LUFS</div>
-        </div>
-      </div>
-
-      <div class="panel-box" data-panel-id="panel-levels">
-        <div class="panel-title">Levels</div>
-        <div class="panel-body">
-          <section class="meters">
-            <div class="meter">
-              <div class="label" title="Root-mean-square level">RMS (dBFS)</div>
-              <div id="rms" class="value">—</div>
-            </div>
-            <div class="meter">
-              <div class="label" title="Peak sample level">Peak (dBFS)</div>
-              <div id="peak" class="value">—</div>
-              <div class="meter-sub">
-                <span>Hold:</span> <span id="peakHold">—</span>
-                <span id="clipLed" class="clip-led" title="Clip indicator">●</span>
-              </div>
-              <button id="resetPeak" class="reset">Reset Peak</button>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-
     <div class="vizGrid">
       <div class="panel-box canvas-panel" data-panel-id="panel-meters">
         <div class="panel-title">Instrument Meters</div>

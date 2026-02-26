@@ -675,21 +675,8 @@
       let stats;
       if(meterEngine && leftArray && rightArray){
         try{
-          // Debug: Check input signal levels
-          const maxL = Math.max(...leftArray.map(Math.abs));
-          const maxR = Math.max(...rightArray.map(Math.abs));
-          
           meterEngine.processStereoBuffer(leftArray, rightArray, audioCtx.currentTime || (Date.now()/1000));
           const m = meterEngine.getMetrics();
-          
-          // Debug: Log signal and block info every 2 seconds
-          if(!window.lastDebugLog || (Date.now() - window.lastDebugLog) > 2000){
-            console.log(`[MeterEngine] INPUT: L=${maxL.toFixed(4)} R=${maxR.toFixed(4)} bufLen=${leftArray.length} | METERS: peak=${m.peakLinear.toFixed(4)} rms=${m.rmsLinear.toFixed(4)} | LUFS: blocks=${m.blockCount} M=${m.lufsMomentary.toFixed(1)} I=${m.lufsIntegrated.toFixed(1)}`);
-            if(maxL === 0 && maxR === 0){
-              console.warn('⚠️ NO AUDIO INPUT DETECTED - Check that your input device is sending audio (play music, speak into mic, etc.)');
-            }
-            window.lastDebugLog = Date.now();
-          }
           
           stats = {
             lufs: m.lufsIntegrated,
@@ -710,23 +697,15 @@
           console.warn('[MeterEngine] No input: leftArray=', !!leftArray, 'rightArray=', !!rightArray);
         }
         stats = computeStatsAndLUFS(dataArray);
-        
-        // Debug: Check if main analyser is receiving audio
-        if(!window.lastMainAnalyserCheck || (Date.now() - window.lastMainAnalyserCheck) > 5000){
-          const maxMain = Math.max(...dataArray.map(Math.abs));
-          console.log(`[Audio] Main analyser max: ${maxMain.toFixed(6)} (${dataArray.length} samples)`);
-          if(maxMain === 0){
-            console.warn('⚠️ Main analyser also shows zero - audio device may not be sending signal');
-          }
-          window.lastMainAnalyserCheck = Date.now();
-        }
       }
 
-      lufsEl.textContent = stats.lufs.toFixed(1) + ' LUFS';
-      document.getElementById('lufsM').textContent = stats.momentaryLufs.toFixed(1) + ' LUFS';
-      document.getElementById('lufsS').textContent = stats.peakLufs.toFixed(1) + ' LUFS';
-      rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
-      peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
+      if(lufsEl) lufsEl.textContent = stats.lufs.toFixed(1) + ' LUFS';
+      const lufsMEl = document.getElementById('lufsM');
+      if(lufsMEl) lufsMEl.textContent = stats.momentaryLufs.toFixed(1) + ' LUFS';
+      const lufsSEl = document.getElementById('lufsS');
+      if(lufsSEl) lufsSEl.textContent = stats.peakLufs.toFixed(1) + ' LUFS';
+      if(rmsEl) rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
+      if(peakEl) peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
       if(peakHoldEl) peakHoldEl.textContent = stats.holdDb.toFixed(1) + ' dBFS';
 
       // Debug info with new metering data (optional elements)

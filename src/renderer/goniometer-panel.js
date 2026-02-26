@@ -144,33 +144,6 @@ class GoniometerPanel {
     const colors = this._getColors();
     const len = Math.min(leftArray.length, rightArray.length);
     
-    // DEBUG: Continuous logging of input data
-    if (this.renderCount % 60 === 0) { // Log every 60 frames
-      const maxL = Math.max(...Array.from(leftArray.slice(0, 100)).map(Math.abs));
-      const maxR = Math.max(...Array.from(rightArray.slice(0, 100)).map(Math.abs));
-      
-      // Check if L and R are identical (mono) or different (stereo)
-      let identical = true;
-      for (let i = 0; i < Math.min(100, len); i++) {
-        if (Math.abs(leftArray[i] - rightArray[i]) > 0.0001) {
-          identical = false;
-          break;
-        }
-      }
-      
-      console.log(`[Goniometer] Input data (frame ${this.renderCount}):`, {
-        channels: identical ? 'MONO (L===R)' : 'STEREO (L≠R)',
-        leftLen: leftArray.length,
-        rightLen: rightArray.length,
-        maxL,
-        maxR,
-        sampleL0: leftArray[0]?.toFixed(4),
-        sampleR0: rightArray[0]?.toFixed(4),
-        L1: leftArray[1]?.toFixed(4),
-        R1: rightArray[1]?.toFixed(4)
-      });
-    }
-    
     // Compute metrics
     this._computeMetrics(leftArray, rightArray, len);
     
@@ -235,24 +208,6 @@ class GoniometerPanel {
       }
     }
     
-    // DEBUG: Verify we have stereo data
-    if (this.renderCount % 120 === 0) { // Log every 2 seconds
-      let maxX = 0, maxY = 0;
-      for (let i = 0; i < len; i += 4) {
-        maxX = Math.max(maxX, Math.abs(mapped.x[i]));
-        maxY = Math.max(maxY, Math.abs(mapped.y[i]));
-      }
-      console.log('[Goniometer] Mapped Stereo:', {
-        mapping: this.mapping,
-        maxX: maxX.toFixed(4),
-        maxY: maxY.toFixed(4),
-        sampleCount: len,
-        mappedLen: mapped.x.length,
-        x0: mapped.x[0]?.toFixed(4),
-        y0: mapped.y[0]?.toFixed(4)
-      });
-    }
-    
     return mapped;
   }
   
@@ -289,21 +244,12 @@ class GoniometerPanel {
     this.pointCount = 0;
     const maxR = Math.min(cx, cy) - 20;
     
-    // Track point distribution for stereo verification
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    
     for (let i = 0; i < len && this.pointCount < this.maxPoints; i += 4) {
       const x = mapped.x[i];
       const y = mapped.y[i];
       const dist = Math.hypot(x, y);
       
       if (dist > 0.01) { // Skip near-zero samples
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-        
         // Normalize to unit circle, then scale to canvas
         const norm = dist > 1.0 ? 1.0 / dist : 1.0;
         const px = cx + x * norm * maxR;
@@ -313,19 +259,6 @@ class GoniometerPanel {
         this.pointsY[this.pointCount] = py;
         this.pointCount++;
       }
-    }
-    
-    // DEBUG: Log point accumulation and stereo distribution
-    if (this.renderCount % 120 === 0) { // Log every 2 seconds
-      console.log('[Goniometer] Point Accumulation:', {
-        pointCount: this.pointCount,
-        maxPoints: this.maxPoints,
-        dataRange: { x: [minX.toFixed(4), maxX.toFixed(4)], y: [minY.toFixed(4), maxY.toFixed(4)] },
-        canvasCenter: [cx, cy],
-        maxRadius: maxR,
-        px0: this.pointsX[0],
-        py0: this.pointsY[0]
-      });
     }
   }
   
@@ -378,22 +311,6 @@ class GoniometerPanel {
       this.lastBalance = 0;
     }
     
-    // DEBUG: Log stereo metrics continuously
-    if (this.renderCount % 60 === 0) { // Log every ~1 second (at 60fps)
-      console.log('[Goniometer] Stereo Metrics:', {
-        correlation: this.lastCorr.toFixed(3),
-        width: this.lastWidth.toFixed(1) + '%',
-        balance: this.lastBalance.toFixed(1) + 'dB',
-        rmsL: rmsL.toFixed(4),
-        rmsR: rmsR.toFixed(4),
-        rmsM: rmsM.toFixed(4),
-        rmsS: rmsS.toFixed(4),
-        sumL: sumL.toFixed(2),
-        sumR: sumR.toFixed(2),
-        sumM: sumM.toFixed(2),
-        sumS: sumS.toFixed(2)
-      });
-    }
   }
   
   /**
