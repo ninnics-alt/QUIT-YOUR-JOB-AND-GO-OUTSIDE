@@ -1004,8 +1004,8 @@
       vsPointCount++;
     }
 
-    // Trace styles
-    const traceColor = colors.accentGreen || '#00ff88';
+    // Trace styles - use theme-specific trace color
+    const traceColor = colors.trace || colors.accentGreen || '#00ff88';
     if(vsStyle === 'phosphor'){
       // Fade persistence buffer
       vsBufCtx.globalCompositeOperation = 'source-over';
