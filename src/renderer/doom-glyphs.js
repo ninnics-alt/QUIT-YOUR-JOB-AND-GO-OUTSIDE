@@ -45,10 +45,9 @@ const DoomGlyphs = {
   },
 
   drawGlyphGrid(ctx, x, y, w, h, dpr = 1, cellPx = 160, alpha = 0.25) {
+    // Always render for all themes (will use defaults if theme not available)
     const theme = typeof THEME !== 'undefined' ? THEME : null;
-    if (!theme || theme.currentPalette !== 'doom') return;
-
-    const colors = theme.colors || {};
+    const colors = (theme && theme.colors) || {};
     const accentOrange = colors.accentB || '#FF8B33';
     const accentRed = colors.accentA || '#FF3333';
 

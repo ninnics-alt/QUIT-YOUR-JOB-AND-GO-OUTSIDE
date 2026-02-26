@@ -36,10 +36,9 @@ const DoomSigils = {
    * @param {object} opts - Options { accentColor, theme }
    */
   drawCalibration(ctx, cx, cy, radius, t = 0, opts = {}) {
+    // Always render for testing (will only appear when panels call it)
     const theme = opts.theme || (typeof THEME !== 'undefined' ? THEME : null);
-    if (!theme || theme.currentPalette !== 'doom') return; // Only render in DOOM theme
-
-    const accentColor = opts.accentColor || (theme.colors && theme.colors.accentRed) || '#FF3333';
+    const accentColor = opts.accentColor || (theme && theme.colors && theme.colors.accentRed) || '#FF3333';
 
     // Slow rotation: ~0.12 rad/s * t
     const angleOffset = t * 0.12;
