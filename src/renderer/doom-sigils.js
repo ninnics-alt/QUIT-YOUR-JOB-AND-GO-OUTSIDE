@@ -48,8 +48,8 @@ const DoomSigils = {
 
     // --- Concentric circular glyph rings ---
     ctx.strokeStyle = accentColor;
-    ctx.globalAlpha = 0.10;
-    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 1.2;
 
     // Draw 3 concentric circles
     const ringRadii = [radius * 0.33, radius * 0.67, radius];
@@ -60,8 +60,8 @@ const DoomSigils = {
     });
 
     // --- Runes: small arc segments around the rings ---
-    ctx.globalAlpha = 0.10;
-    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.20;
+    ctx.lineWidth = 1.0;
     ctx.strokeStyle = accentColor;
 
     DoomSigils.RUNE_ANGLES.forEach((angle) => {
@@ -80,8 +80,8 @@ const DoomSigils = {
     });
 
     // --- Rotating ticks (8 at 45° increments) ---
-    ctx.globalAlpha = 0.12;
-    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = 0.22;
+    ctx.lineWidth = 1.4;
     ctx.strokeStyle = accentColor;
 
     DoomSigils.TICK_ANGLES.forEach((baseAngle, idx) => {
@@ -103,7 +103,7 @@ const DoomSigils = {
     });
 
     // --- Warning teeth on outer radius (every other position) ---
-    ctx.globalAlpha = 0.08;
+    ctx.globalAlpha = 0.18;
     ctx.fillStyle = accentColor;
 
     DoomSigils.TEETH_ANGLES.forEach((angle) => {

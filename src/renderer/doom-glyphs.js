@@ -36,170 +36,90 @@ const DoomGlyphs = {
   _patternCache: {},
 
   /**
-   * Get or create a CanvasPattern for glyph grid
-   * @param {number} dpr - Device pixel ratio
-   * @param {number} cellPx - Cell size in pixels (before dpr scaling)
-   * @returns {CanvasPattern}
+   * Get or create a CanvasPattern for glyph grid (DEPRECATED - now using direct drawing)
+   * @deprecated Use drawGlyphGrid instead
    */
   getPattern(dpr = 1, cellPx = 160) {
-    const cacheKey = `doom_${dpr}_${cellPx}`;
-    const themeVersion = typeof THEME !== 'undefined' ? THEME.version : 0;
+    // Pattern-based approach is deprecated; drawGlyphGrid now renders directly
+    return null;
+  },
 
-    // Return cached pattern if theme hasn't changed
-    if (DoomGlyphs._patternCache[cacheKey]) {
-      const cached = DoomGlyphs._patternCache[cacheKey];
-      if (cached.lastThemeVersion === themeVersion) {
-        return cached.pattern;
-      }
-    }
-
-    // Create offscreen canvas for pattern
-    const patternW = cellPx * dpr;
-    const patternH = cellPx * dpr;
-    const patternCanvas = document.createElement('canvas');
-    patternCanvas.width = patternW;
-    patternCanvas.height = patternH;
-    const pctx = patternCanvas.getContext('2d');
-
-    // Get theme colors
+  drawGlyphGrid(ctx, x, y, w, h, dpr = 1, cellPx = 160, alpha = 0.25) {
     const theme = typeof THEME !== 'undefined' ? THEME : null;
-    const colors = theme && theme.colors ? theme.colors : {};
+    if (!theme || theme.currentPalette !== 'doom') return;
+
+    const colors = theme.colors || {};
     const accentOrange = colors.accentB || '#FF8B33';
     const accentRed = colors.accentA || '#FF3333';
 
-    pctx.scale(dpr, dpr);
-
-    // --- Diagonal chevrons (45° lines with breaks) ---
-    pctx.strokeStyle = accentOrange;
-    pctx.globalAlpha = 0.12;
-    pctx.lineWidth = 0.6;
-
-    const cellSize = cellPx;
-    const chevronSpacing = 20; // pixels between chevron lines
-    const chevronDash = 6; // length of dash
-
-    for (let offset = -cellSize; offset < cellSize * 2; offset += chevronSpacing) {
-      // Diagonal line from top-left to bottom-right
-      const x1 = offset;
-      const y1 = -cellSize;
-      const x2 = offset + cellSize;
-      const y2 = cellSize;
-
-      // Draw dashed look with multiple small segments
-      pctx.beginPath();
-      pctx.moveTo(x1, y1);
-      pctx.lineTo(x2, y2);
-      pctx.stroke();
-    }
-
-    // --- Warning triangles (deterministic scatter via seeded RNG) ---
-    const rng = DoomGlyphs._seededRNG(0x13370f);
-    const triangleCount = 6;
-    const triangles = [];
-
-    for (let i = 0; i < triangleCount; i++) {
-      triangles.push({
-        x: rng() * cellSize,
-        y: rng() * cellSize,
-        size: 4 + rng() * 3,
-        rotation: rng() * Math.PI * 2,
-      });
-    }
-
-    pctx.strokeStyle = accentRed;
-    pctx.globalAlpha = 0.08;
-    pctx.lineWidth = 0.5;
-
-    triangles.forEach((tri) => {
-      pctx.save();
-      pctx.translate(tri.x, tri.y);
-      pctx.rotate(tri.rotation);
-
-      // Draw hollow triangle
-      const h = tri.size;
-      const w = (tri.size * Math.sqrt(3)) / 2;
-      pctx.beginPath();
-      pctx.moveTo(0, -h / 1.5);
-      pctx.lineTo(w / 2, h / 3);
-      pctx.lineTo(-w / 2, h / 3);
-      pctx.closePath();
-      pctx.stroke();
-
-      pctx.restore();
-    });
-
-    // --- Micro pseudo-text (precomputed glyph strings) ---
-    pctx.fillStyle = accentOrange;
-    pctx.globalAlpha = 0.06;
-    pctx.font = 'normal 6px monospace';
-    pctx.textAlign = 'left';
-    pctx.textBaseline = 'top';
-
-    // Deterministic placement of text glyphs
-    const textRng = DoomGlyphs._seededRNG(0x42cafe);
-    const textCount = 3;
-
-    for (let i = 0; i < textCount; i++) {
-      const glyphStr = DoomGlyphs.GLYPH_STRINGS[i % DoomGlyphs.GLYPH_STRINGS.length];
-      const tx = textRng() * (cellSize - 40);
-      const ty = textRng() * (cellSize - 20);
-      const rotation = (textRng() - 0.5) * 0.2; // Very small rotation (-0.1 to 0.1 rad)
-
-      pctx.save();
-      pctx.translate(tx, ty);
-      pctx.rotate(rotation);
-      pctx.fillText(glyphStr, 0, 0);
-      pctx.restore();
-    }
-
-    // Create pattern
-    const pattern = pctx.createPattern(patternCanvas, 'repeat');
-
-    // Cache it
-    DoomGlyphs._patternCache[cacheKey] = {
-      pattern,
-      canvas: patternCanvas,
-      lastThemeVersion: themeVersion,
-    };
-
-    return pattern;
-  },
-
-  /**
-   * Draw glyph grid underlay in a panel area
-   * @param {CanvasRenderingContext2D} ctx
-   * @param {number} x - Panel left
-   * @param {number} y - Panel top
-   * @param {number} w - Panel width
-   * @param {number} h - Panel height
-   * @param {number} dpr - Device pixel ratio
-   * @param {number} cellPx - Cell size (default 160)
-   * @param {number} alpha - Opacity override (optional)
-   * @param {number} driftX - Optional horizontal parallax offset
-   */
-  drawGlyphGrid(ctx, x, y, w, h, dpr = 1, cellPx = 160, alpha = 0.10, driftX = 0) {
-    const theme = typeof THEME !== 'undefined' ? THEME : null;
-    if (!theme || theme.currentPalette !== 'doom') return; // Only render in DOOM theme
-
     ctx.save();
 
-    // Get pattern
-    const pattern = DoomGlyphs.getPattern(dpr, cellPx);
-    if (!pattern) {
+    // --- Diagonal chevrons (45° lines) ---
+    ctx.strokeStyle = accentOrange;
+    ctx.lineWidth = 1.0;
+    ctx.globalAlpha = alpha * 0.8;
+
+    const chevronSpacing = cellPx * 0.75;
+    for (let ox = x - h; ox < x + w + h; ox += chevronSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(ox, y - h);
+      ctx.lineTo(ox + h, y + h);
+      ctx.stroke();
+    }
+
+    // --- Warning triangles (seeded RNG for consistency) ---
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.strokeStyle = accentRed;
+    ctx.lineWidth = 0.8;
+
+    const rng = DoomGlyphs._seededRNG(0x13370f);
+    const gridCols = Math.ceil(w / cellPx) + 1;
+    const gridRows = Math.ceil(h / cellPx) + 1;
+
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        rng(); // Advance RNG
+        const triX = x + col * cellPx + rng() * cellPx * 0.5;
+        const triY = y + row * cellPx + rng() * cellPx * 0.5;
+        const triSize = 3 + rng() * 2;
+
+        ctx.save();
+        ctx.translate(triX, triY);
+        ctx.rotate(rng() * Math.PI);
+
+        ctx.beginPath();
+        ctx.moveTo(0, -triSize);
+        ctx.lineTo(triSize * 0.866, triSize * 0.5);
+        ctx.lineTo(-triSize * 0.866, triSize * 0.5);
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    // --- Micro glyph text ---
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = accentOrange;
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const textRng = DoomGlyphs._seededRNG(0x42cafe);
+    const glyphCount = Math.max(4, Math.ceil(w * h / (cellPx * cellPx * 5)));
+
+    for (let i = 0; i < glyphCount && i < 16; i++) {
+      const glyph = DoomGlyphs.GLYPH_STRINGS[i % DoomGlyphs.GLYPH_STRINGS.length];
+      const tx = x + textRng() * w;
+      const ty = y + textRng() * h;
+      const rot = (textRng() - 0.5) * 0.2;
+
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(rot);
+      ctx.fillText(glyph, 0, 0);
       ctx.restore();
-      return;
     }
-
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = pattern;
-
-    // Optional subtle drift (very slow parallax)
-    if (driftX !== 0) {
-      ctx.translate(driftX, 0);
-    }
-
-    // Fill the panel area
-    ctx.fillRect(x, y, w, h);
 
     ctx.restore();
   },
