@@ -2064,6 +2064,11 @@
     const minHz = 20;
     const maxHz = state.maxHz;
     
+    // dB scale parameters
+    const dbMin = -72;
+    const dbMax = 6;
+    const dbRange = dbMax - dbMin;
+    
     const logMin = Math.log10(minHz);
     const logMax = Math.log10(maxHz);
     
@@ -2074,9 +2079,8 @@
     };
     
     const dbToYNorm = (db) => {
-      // Map dB range [-60, 0] to [1, 0] (inverted: low dB at top)
-      const dbRange = 60;
-      const normalized = Math.max(0, Math.min(1, (db + 60) / dbRange));
+      // Map dB range [dbMin, dbMax] to [1, 0] (inverted: low dB at top)
+      const normalized = Math.max(0, Math.min(1, (db - dbMin) / dbRange));
       return 1 - normalized; // Invert
     };
     
@@ -2091,7 +2095,7 @@
     
     // --- DRAW dB GRID (Y-AXIS) ---
     const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
-    const dbGridValues = [-12, -18, -24, -30, -36, -42, -48, -54, -60];
+    const dbGridValues = [6, 0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72];
     
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.25)`;
     specGraphCtx.lineWidth = 1;
@@ -2141,7 +2145,7 @@
       const barX = (bIdx / barsPerScreen) * w;
       
       // Color based on magnitude
-      const magnitude = Math.max(0, Math.min(1, (displayDb + 60) / 60));
+      const magnitude = Math.max(0, Math.min(1, (displayDb - dbMin) / dbRange));
       specGraphCtx.fillStyle = colorForValue(magnitude);
       specGraphCtx.fillRect(barX, barY, barW, barH);
       
