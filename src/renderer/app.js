@@ -1956,8 +1956,12 @@
   const SPEC_DB_MAX = -12;
   const SPEC_DISPLAY_MIN_HZ = 60;
   const SPEC_DISPLAY_MAX_HZ = 30000;
-  const SPEC_HI_BAND_START_HZ = 20000;
-  const SPEC_HI_SHARE = 0.22;
+  // 3-segment mapping: 60Hz–15kHz (log), 15kHz–20kHz (linear), 20kHz–30kHz (linear, de-emphasized)
+  const SPEC_FREQ_SEGMENT_1_HZ = 15000;  // End of first segment
+  const SPEC_FREQ_SEGMENT_2_HZ = 20000;  // End of second segment (high band start)
+  const SPEC_WIDTH_SHARE_A = 0.72;       // Segment 1: 60–15k (log)
+  const SPEC_WIDTH_SHARE_B = 0.22;       // Segment 2: 15k–20k (linear, boosted)
+  const SPEC_WIDTH_SHARE_C = 0.06;       // Segment 3: 20k–30k (linear, de-emphasized)
   const SPEC_LEFT_PAD = 2;
   const SPEC_RIGHT_GUTTER = 48;
   const SPEC_SMOOTH_OCTAVE_WIDTH = 1 / 6;
@@ -1968,21 +1972,37 @@
     const safeW = Math.max(1, plotW);
     const safeMin = Math.max(1, fMinDisplay);
     const safeMax = Math.max(safeMin + 1, fMaxDisplay);
-    const safeA = Math.max(safeMin + 1, Math.min(SPEC_HI_BAND_START_HZ, safeMax));
-    const hiShare = Math.max(0.18, Math.min(0.30, SPEC_HI_SHARE));
-    const loW = safeW * (1 - hiShare);
-    const hiW = Math.max(1, safeW * hiShare);
+    const f1 = SPEC_FREQ_SEGMENT_1_HZ;   // 15 kHz
+    const f2 = SPEC_FREQ_SEGMENT_2_HZ;   // 20 kHz
+    const wA = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_A));
+    const wB = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_B));
+    const wC = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_C));
+    // Normalize shares to sum to 1
+    const wSum = wA + wB + wC;
+    const nA = wA / wSum;
+    const nB = wB / wSum;
+    const nC = wC / wSum;
+    const WA = safeW * nA;
+    const WB = safeW * nB;
+    const WC = safeW * nC;
     const fftSize = binCount * 2;
 
     const xToFreq = (x) => {
       if (safeW <= 1) return safeMin;
       const xClamped = Math.max(0, Math.min(safeW, x));
-      if (safeMax <= safeA || xClamped <= loW) {
-        const t = Math.max(0, Math.min(1, loW <= 0 ? 0 : (xClamped / Math.max(1e-6, loW))));
-        return Math.exp(Math.log(safeMin) + t * (Math.log(safeA) - Math.log(safeMin)));
+      // Segment 1: log map [safeMin..f1] -> [0..WA]
+      if (xClamped <= WA) {
+        const t = Math.max(0, Math.min(1, WA <= 0 ? 0 : (xClamped / Math.max(1e-6, WA))));
+        return Math.exp(Math.log(safeMin) + t * (Math.log(f1) - Math.log(safeMin)));
       }
-      const t = Math.max(0, Math.min(1, (xClamped - loW) / hiW));
-      return safeA + t * (safeMax - safeA);
+      // Segment 2: linear map [f1..f2] -> [WA..WA+WB]
+      if (xClamped <= WA + WB) {
+        const t = Math.max(0, Math.min(1, WB <= 0 ? 0 : ((xClamped - WA) / Math.max(1e-6, WB))));
+        return f1 + t * (f2 - f1);
+      }
+      // Segment 3: linear map [f2..safeMax] -> [WA+WB..safeW]
+      const t = Math.max(0, Math.min(1, WC <= 0 ? 0 : ((xClamped - WA - WB) / Math.max(1e-6, WC))));
+      return f2 + t * (safeMax - f2);
     };
 
     const centerFreq = new Float32Array(safeW);
@@ -2026,10 +2046,11 @@
       sampleRateHz,
       fMinDisplay: safeMin,
       fMaxDisplay: safeMax,
-      fABoundary: safeA,
-      hiShare,
-      loW,
-      hiW,
+      f1,
+      f2,
+      WA,
+      WB,
+      WC,
       binCount,
       centerFreq,
       binStart,
@@ -2162,10 +2183,6 @@
     const nyquist = sr / 2;
     const minHz = SPEC_DISPLAY_MIN_HZ;
     const maxHz = SPEC_DISPLAY_MAX_HZ;
-    const fABoundary = SPEC_HI_BAND_START_HZ;
-    const hiShare = Math.max(0.18, Math.min(0.30, SPEC_HI_SHARE));
-    const loW = plotW * (1 - hiShare);
-    const hiW = Math.max(1, plotW * hiShare);
     
     // dB scale parameters
     const dbMin = SPEC_DB_MIN;
@@ -2216,25 +2233,52 @@
       specColumnMapCache = buildSpecColumnMap(plotW, sr, minHz, maxHz, specFloatBins.length);
     }
     
+    const f1 = SPEC_FREQ_SEGMENT_1_HZ;   // 15 kHz
+    const f2 = SPEC_FREQ_SEGMENT_2_HZ;   // 20 kHz
+    const wA = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_A));
+    const wB = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_B));
+    const wC = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_C));
+    const wSum = wA + wB + wC;
+    const nA = wA / wSum;
+    const nB = wB / wSum;
+    const nC = wC / wSum;
+    const WA = plotW * nA;
+    const WB = plotW * nB;
+    const WC = plotW * nC;
+
     const freqToPlotX = (freq) => {
       const f = clamp(freq, minHz, maxHz);
-      if (f <= fABoundary) {
-        const t = (Math.log(f) - Math.log(minHz)) / (Math.log(fABoundary) - Math.log(minHz));
-        return plotX0 + clamp01(t) * loW;
+      // Segment 1: log map [minHz..f1] -> [plotX0..plotX0+WA]
+      if (f <= f1) {
+        const t = (Math.log(f) - Math.log(minHz)) / (Math.log(f1) - Math.log(minHz));
+        return plotX0 + clamp01(t) * WA;
       }
-      const t = (f - fABoundary) / (maxHz - fABoundary);
-      return plotX0 + loW + clamp01(t) * hiW;
+      // Segment 2: linear map [f1..f2] -> [plotX0+WA..plotX0+WA+WB]
+      if (f <= f2) {
+        const t = (f - f1) / (f2 - f1);
+        return plotX0 + WA + clamp01(t) * WB;
+      }
+      // Segment 3: linear map [f2..maxHz] -> [plotX0+WA+WB..plotX1]
+      const t = (f - f2) / (maxHz - f2);
+      return plotX0 + WA + WB + clamp01(t) * WC;
     };
 
     const plotXToFreq = (x) => {
       const xClamped = clamp(x, plotX0, plotX1);
-      const splitX = plotX0 + loW;
-      if (xClamped <= splitX) {
-        const t = clamp01((xClamped - plotX0) / Math.max(1e-6, loW));
-        return Math.exp(Math.log(minHz) + t * (Math.log(fABoundary) - Math.log(minHz)));
+      const xRel = xClamped - plotX0;
+      // Segment 1: log inverse [plotX0..plotX0+WA] -> [minHz..f1]
+      if (xRel <= WA) {
+        const t = clamp01(WA <= 0 ? 0 : (xRel / Math.max(1e-6, WA)));
+        return Math.exp(Math.log(minHz) + t * (Math.log(f1) - Math.log(minHz)));
       }
-      const t = clamp01((xClamped - splitX) / Math.max(1e-6, hiW));
-      return fABoundary + t * (maxHz - fABoundary);
+      // Segment 2: linear inverse [plotX0+WA..plotX0+WA+WB] -> [f1..f2]
+      if (xRel <= WA + WB) {
+        const t = clamp01(WB <= 0 ? 0 : ((xRel - WA) / Math.max(1e-6, WB)));
+        return f1 + t * (f2 - f1);
+      }
+      // Segment 3: linear inverse [plotX0+WA+WB..plotX1] -> [f2..maxHz]
+      const t = clamp01(WC <= 0 ? 0 : ((xRel - WA - WB) / Math.max(1e-6, WC)));
+      return f2 + t * (maxHz - f2);
     };
     
     const dbToYNorm = (db) => {
@@ -2365,14 +2409,22 @@
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
-    // Major tick labels
+    // Major tick labels (dim 25k+ as it's de-emphasized)
     const majorTicks = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 25000, 30000];
     for (let freq of majorTicks) {
       if (freq > maxHz) continue;
       const xPos = freqToPlotX(freq);
       const label = freq >= 1000 ? (freq % 1000 === 0 ? (freq / 1000).toFixed(0) + 'k' : (freq / 1000).toFixed(1) + 'k') : String(freq);
+      // Dim labels for 25k+ (de-emphasized band)
+      if (freq >= 25000) {
+        specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.5)`;
+      } else {
+        specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
+      }
       specGraphCtx.fillText(label, xPos, graphH + 5);
     }
+    // Reset fill color for vertical tick lines
+    specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
     
     // Draw subtle vertical tick lines at major frequencies (plot only)
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.15)`;
