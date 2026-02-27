@@ -557,8 +557,8 @@
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
     analyser.minDecibels = -100;
-    analyser.maxDecibels = -12;
-    analyser.smoothingTimeConstant = 0.6;
+    analyser.maxDecibels = -20;
+    analyser.smoothingTimeConstant = 0.15;  // Lower to reduce stuck highs above Nyquist
     const bufferLength = analyser.fftSize;
     dataArray = new Float32Array(bufferLength);
     const freqBinCount = analyser.frequencyBinCount;
@@ -1990,19 +1990,25 @@
     const xToFreq = (x) => {
       if (safeW <= 1) return safeMin;
       const xClamped = Math.max(0, Math.min(safeW, x));
+      let freq;
       // Segment 1: log map [safeMin..f1] -> [0..WA]
       if (xClamped <= WA) {
         const t = Math.max(0, Math.min(1, WA <= 0 ? 0 : (xClamped / Math.max(1e-6, WA))));
-        return Math.exp(Math.log(safeMin) + t * (Math.log(f1) - Math.log(safeMin)));
+        freq = Math.exp(Math.log(safeMin) + t * (Math.log(f1) - Math.log(safeMin)));
       }
       // Segment 2: linear map [f1..f2] -> [WA..WA+WB]
-      if (xClamped <= WA + WB) {
+      else if (xClamped <= WA + WB) {
         const t = Math.max(0, Math.min(1, WB <= 0 ? 0 : ((xClamped - WA) / Math.max(1e-6, WB))));
-        return f1 + t * (f2 - f1);
+        freq = f1 + t * (f2 - f1);
       }
       // Segment 3: linear map [f2..safeMax] -> [WA+WB..safeW]
-      const t = Math.max(0, Math.min(1, WC <= 0 ? 0 : ((xClamped - WA - WB) / Math.max(1e-6, WC))));
-      return f2 + t * (safeMax - f2);
+      else {
+        const t = Math.max(0, Math.min(1, WC <= 0 ? 0 : ((xClamped - WA - WB) / Math.max(1e-6, WC))));
+        freq = f2 + t * (safeMax - f2);
+      }
+      // Clamp to physically realizable frequency (Nyquist limit)
+      const nyquist = sampleRateHz * 0.5;
+      return Math.min(freq, nyquist);
     };
 
     const centerFreq = new Float32Array(safeW);
@@ -2017,8 +2023,10 @@
       const fi = Math.sqrt(Math.max(1, f0) * Math.max(1, f1));
       centerFreq[x] = fi;
 
-      let i0 = Math.floor((f0 * fftSize) / sampleRateHz);
-      let i1 = Math.ceil((f1 * fftSize) / sampleRateHz);
+      // Nyquist-safe bin calculation: bin = (freq / nyquist) * (binCount - 1)
+      const nyquist = sampleRateHz * 0.5;
+      let i0 = Math.floor((f0 / nyquist) * (binCount - 1));
+      let i1 = Math.ceil((f1 / nyquist) * (binCount - 1));
       i0 = Math.max(0, Math.min(binCount - 1, i0));
       i1 = Math.max(0, Math.min(binCount - 1, i1));
       if (i1 < i0) i1 = i0;
@@ -2182,12 +2190,13 @@
     const sr = sampleRate || 48000;
     const nyquist = sr / 2;
     const minHz = SPEC_DISPLAY_MIN_HZ;
-    const maxHz = SPEC_DISPLAY_MAX_HZ;
+    const maxHz = Math.min(SPEC_DISPLAY_MAX_HZ, nyquist);  // Clamp to Nyquist - can't have FFT bins above this
     
     // dB scale parameters
     const dbMin = SPEC_DB_MIN;
     const dbMax = SPEC_DB_MAX;
     const dbRange = dbMax - dbMin;
+    const drawFloorGateDb = dbMin + 1.0;  // Floor gate: don't draw noise/smoothing artifacts
     const clamp01 = (v) => Math.max(0, Math.min(1, v));
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     
@@ -2353,10 +2362,10 @@
         dbCol = dbMin;
       }
       
-      // Nyquist cap: no fake energy above Nyquist
+      // Nyquist cap: no fake energy above maxHz (which is clamped to Nyquist)
       const fCenter = specColumnMapCache.centerFreq[x];
-      if (fCenter > nyquist) {
-        dbCol = dbMin;
+      if (fCenter >= maxHz) {
+        dbCol = dbMin;  // Hard floor - no data above Nyquist
       }
       
       // Apply tilt in dB domain (keep negative values)
@@ -2390,6 +2399,12 @@
 
     for (let x = 0; x < plotW; x++) {
       const drawDb = SPEC_VIEW_MODE === 'live' ? specLiveSpectrum[x] : specAvgSpectrum[x];
+      
+      // Floor gate: skip drawing if below threshold (prevents noise/smoothing artifacts)
+      if (!Number.isFinite(drawDb) || drawDb <= drawFloorGateDb) {
+        continue;  // Don't draw anything for this column
+      }
+      
       const norm = clamp01((drawDb - dbMin) / dbRange);
       const barH = norm * graphH;
       const y = graphH - barH;
@@ -2400,6 +2415,16 @@
       const light = 20 + 45 * norm;
       specGraphCtx.fillStyle = `hsl(${hue} 95% ${light}%)`;
       specGraphCtx.fillRect(xPix, y, 1, barH);
+    }
+    
+    // Clear dead zone above maxHz (no real FFT data beyond Nyquist)
+    const xMaxHz = freqToPlotX(maxHz);
+    if (xMaxHz < plotX1) {
+      specGraphCtx.save();
+      specGraphCtx.globalCompositeOperation = 'source-over';
+      specGraphCtx.fillStyle = colors.bgInset;  // Same as spectrograph background
+      specGraphCtx.fillRect(xMaxHz, 0, plotX1 - xMaxHz, graphH);
+      specGraphCtx.restore();
     }
     
     // --- DRAW FREQUENCY AXIS (X-AXIS) ---
