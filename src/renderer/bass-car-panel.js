@@ -482,7 +482,7 @@ class BassCarPanel {
   }
   
   /**
-   * Draw SUV/minivan (procedural boxy shape)
+   * Draw enhanced SUV/minivan with Tahoe proportions and detailed features
    */
   _drawCar() {
     const ctx = this.ctx;
@@ -496,52 +496,54 @@ class BassCarPanel {
     // Car position with suspension bounce
     ctx.translate(this.carX, this.carY + this.suspensionY);
     
-    // Body squash/stretch (compress vertically, expand horizontally)
-    const squashY = 1 - this.bodySquash;
-    const squashX = 1 + this.bodySquash * 0.25;
+    // Boom envelope (0..1) for squash/stretch
+    const boomEnvelope = Math.max(this.headlightFlare, this.dustPuffLife);
+    
+    // Body squash/stretch - physics-based deformation
+    // scaleY = 1 - 0.06*boom, scaleX = 1 + 0.03*boom
+    const squashBase = this.bodySquash;
+    const squashY = (1 - squashBase) * (1 - 0.06 * boomEnvelope);
+    const squashX = (1 + squashBase * 0.25) * (1 + 0.03 * boomEnvelope);
     ctx.scale(squashX, squashY);
+    
+    // Micro-jitter on strong hits (1–2px, 80–120ms)
+    let jitterX = 0, jitterY = 0;
+    if (boomEnvelope > 0.7) {
+      const jitterPhase = (performance.now() % 100) / 100;
+      const jitterIntensity = (boomEnvelope - 0.7) / 0.3; // Normalized [0..1] for strong hits
+      jitterX = (Math.sin(jitterPhase * Math.PI * 8) * 1.5 * jitterIntensity);
+      jitterY = (Math.cos(jitterPhase * Math.PI * 6) * 1.2 * jitterIntensity);
+    }
+    ctx.translate(jitterX, jitterY);
     
     // Wheel tilt
     ctx.rotate(this.wheelTilt * Math.PI / 180);
     
-    // Undercar shadow
-    const [sr, sg, sb] = UIHelpers._parseRGB(colors.bgInset);
-    ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, 0.5)`;
-    ctx.ellipse(0, this.carH * 0.5 + 5, this.carW * 0.45, this.carH * 0.1, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // Ground shadow (soft ellipse)
+    this._drawCarShadow();
     
-    // Car body (boxy SUV)
-    const [r, g, b] = UIHelpers._parseRGB(colors.bgPanel);
-    ctx.fillStyle = `rgb(${r + 20}, ${g + 20}, ${b + 20})`;
-    ctx.fill(this.carBody);
+    // Body with gradient (top lighter, bottom darker)
+    this._drawCarBody(colors);
     
-    // Body outline
-    ctx.strokeStyle = colors.border;
-    ctx.lineWidth = 2;
-    ctx.stroke(this.carBody);
+    // Wheel wells
+    this._drawWheelWells(colors);
     
-    // Windows (tinted)
-    ctx.fillStyle = `rgba(${r - 30}, ${g - 30}, ${b - 30}, 0.8)`;
-    ctx.fill(this.carWindows);
-    ctx.strokeStyle = colors.border;
-    ctx.stroke(this.carWindows);
-    
-    // Roof rack (optional detail)
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-this.carW * 0.35, -this.carH * 0.5);
-    ctx.lineTo(this.carW * 0.25, -this.carH * 0.5);
-    ctx.stroke();
-    
-    // Wheel wells / arches
-    ctx.fillStyle = colors.bgInset;
-    ctx.fill(this.carWheelArches);
-    
-    // Wheels (rotating spokes) - with hop from suspension
+    // Wheels with rotation marks and tires
     const wheelYWithHop = this.wheelY + this.wheelHopAmount;
-    this._drawWheel(this.wheelLeft, wheelYWithHop, this.wheelRadius);
-    this._drawWheel(this.wheelRight, wheelYWithHop, this.wheelRadius);
+    this._drawEnhancedWheel(this.wheelLeft, wheelYWithHop, this.wheelRadius, colors);
+    this._drawEnhancedWheel(this.wheelRight, wheelYWithHop, this.wheelRadius, colors);
+    
+    // Windows with gradient fill
+    this._drawWindows(colors);
+    
+    // Pillars (A/B/C)
+    this._drawPillars(colors);
+    
+    // Body outline (double-stroke: outer + inner)
+    this._drawCarOutline(colors);
+    
+    // Specular highlight strip (side at low alpha)
+    this._drawSpecularHighlight(colors);
     
     // Headlights glow (with boom pulse)
     if (this.glowPulse > 0.01) {
@@ -549,16 +551,16 @@ class BassCarPanel {
       const [ar, ag, ab] = UIHelpers._parseRGB(colors.accentA);
       ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, ${glowAlpha})`;
       ctx.beginPath();
-      ctx.arc(-this.carW * 0.45, 0, 8, 0, Math.PI * 2);
-      ctx.arc(-this.carW * 0.45, this.carH * 0.2, 8, 0, Math.PI * 2);
+      ctx.arc(-this.carW * 0.48, -this.carH * 0.15, 6, 0, Math.PI * 2);
+      ctx.arc(-this.carW * 0.48, this.carH * 0.15, 6, 0, Math.PI * 2);
       ctx.fill();
     }
     
     // Tail lights (subtle)
     ctx.fillStyle = colors.accentBad;
     ctx.globalAlpha = 0.6;
-    ctx.fillRect(this.carW * 0.48, -this.carH * 0.15, 4, 8);
-    ctx.fillRect(this.carW * 0.48, this.carH * 0.07, 4, 8);
+    ctx.fillRect(this.carW * 0.48, -this.carH * 0.2, 4, 8);
+    ctx.fillRect(this.carW * 0.48, this.carH * 0.12, 4, 8);
     ctx.globalAlpha = 1;
     
     // VFX: Shockwave ring expanding from car on boom
@@ -588,7 +590,7 @@ class BassCarPanel {
       const [ar, ag, ab] = UIHelpers._parseRGB(colors.accentA);
       ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, ${flareAlpha})`;
       ctx.beginPath();
-      ctx.arc(-this.carW * 0.45, 0, 16, 0, Math.PI * 2);
+      ctx.arc(-this.carW * 0.48, -this.carH * 0.15, 14, 0, Math.PI * 2);
       ctx.fill();
     }
     
@@ -608,46 +610,325 @@ class BassCarPanel {
   }
   
   /**
-   * Draw wheel with rotating spokes
+   * Draw soft shadow ellipse under car
    */
-  _drawWheel(x, y, radius) {
+  _drawCarShadow() {
     const ctx = this.ctx;
     const colors = THEME.colors;
+    
+    const [sr, sg, sb] = UIHelpers._parseRGB(colors.bgInset);
+    ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, 0.4)`;
+    ctx.beginPath();
+    ctx.ellipse(0, this.carH * 0.55, this.carW * 0.48, this.carH * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  /**
+   * Draw car body with gradient (top lighter, bottom darker)
+   * Tahoe proportions: longer body, taller stance, flat roof with rear step, hood slope
+   */
+  _drawCarBody(colors) {
+    const ctx = this.ctx;
+    const w = this.carW;
+    const h = this.carH;
+    
+    // Get base body color
+    const [r, g, b] = UIHelpers._parseRGB(colors.bgPanel);
+    
+    // Body gradient (top to bottom, darker at bottom)
+    const grad = ctx.createLinearGradient(0, -h * 0.5, 0, h * 0.5);
+    grad.addColorStop(0, `rgb(${r + 30}, ${g + 30}, ${b + 30})`);
+    grad.addColorStop(1, `rgb(${Math.max(0, r - 20)}, ${Math.max(0, g - 20)}, ${Math.max(0, b - 20)})`);
+    ctx.fillStyle = grad;
+    
+    // Draw Tahoe-like body shape
+    ctx.beginPath();
+    // Hood (sloped front)
+    ctx.moveTo(-w * 0.48, -h * 0.18);
+    ctx.lineTo(-w * 0.38, -h * 0.35);
+    // Windshield area (angled)
+    ctx.lineTo(-w * 0.30, -h * 0.5);
+    // Roof (flat, long)
+    ctx.lineTo(w * 0.25, -h * 0.5);
+    // Rear step down
+    ctx.lineTo(w * 0.30, -h * 0.35);
+    // Rear hatch (vertical drop)
+    ctx.lineTo(w * 0.48, -h * 0.25);
+    ctx.lineTo(w * 0.48, h * 0.5);
+    // Floor line
+    ctx.lineTo(-w * 0.48, h * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  
+  /**
+   * Draw window areas with darker gradient
+   */
+  _drawWindows(colors) {
+    const ctx = this.ctx;
+    const w = this.carW;
+    const h = this.carH;
+    
+    const [r, g, b] = UIHelpers._parseRGB(colors.bgPanel);
+    
+    // Glass color with subtle vertical gradient (darker in middle)
+    const glassGrad = ctx.createLinearGradient(0, -h * 0.45, 0, -h * 0.25);
+    glassGrad.addColorStop(0, `rgba(${r - 50}, ${g - 50}, ${b - 50}, 0.85)`);
+    glassGrad.addColorStop(0.5, `rgba(${r - 60}, ${g - 60}, ${b - 60}, 0.90)`);
+    glassGrad.addColorStop(1, `rgba(${r - 50}, ${g - 50}, ${b - 50}, 0.85)`);
+    ctx.fillStyle = glassGrad;
+    
+    // Front windshield (angled)
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.38, -h * 0.35);
+    ctx.lineTo(-w * 0.30, -h * 0.48);
+    ctx.lineTo(-w * 0.10, -h * 0.48);
+    ctx.lineTo(-w * 0.18, -h * 0.30);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Left side window
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.10, -h * 0.48);
+    ctx.lineTo(-w * 0.02, -h * 0.48);
+    ctx.lineTo(w * 0.02, -h * 0.32);
+    ctx.lineTo(-w * 0.18, -h * 0.32);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Right side window
+    ctx.beginPath();
+    ctx.moveTo(w * 0.02, -h * 0.48);
+    ctx.lineTo(w * 0.20, -h * 0.48);
+    ctx.lineTo(w * 0.25, -h * 0.35);
+    ctx.lineTo(w * 0.05, -h * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Rear quarter window (small)
+    ctx.beginPath();
+    ctx.moveTo(w * 0.20, -h * 0.36);
+    ctx.lineTo(w * 0.30, -h * 0.36);
+    ctx.lineTo(w * 0.28, -h * 0.25);
+    ctx.lineTo(w * 0.18, -h * 0.25);
+    ctx.closePath();
+    ctx.fill();
+  }
+  
+  /**
+   * Draw pillars (A/B/C) as thin dark strokes
+   */
+  _drawPillars(colors) {
+    const ctx = this.ctx;
+    const w = this.carW;
+    const h = this.carH;
+    
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
+    
+    // A pillar (front)
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.30, -h * 0.48);
+    ctx.lineTo(-w * 0.38, -h * 0.30);
+    ctx.stroke();
+    
+    // B pillar (middle side window divider)
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.02, -h * 0.48);
+    ctx.lineTo(w * 0.00, -h * 0.32);
+    ctx.stroke();
+    
+    // C pillar (rear quarter window)
+    ctx.beginPath();
+    ctx.moveTo(w * 0.20, -h * 0.48);
+    ctx.lineTo(w * 0.28, -h * 0.28);
+    ctx.stroke();
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  /**
+   * Draw wheel wells as semi-circular cutouts
+   */
+  _drawWheelWells(colors) {
+    const ctx = this.ctx;
+    const colors_bg = THEME.colors;
+    
+    // Semi-circular wheel wells
+    ctx.fillStyle = colors_bg.bgInset;
+    ctx.globalAlpha = 0.8;
+    
+    // Front wheel well
+    ctx.beginPath();
+    ctx.arc(this.wheelLeft, this.wheelY, this.wheelRadius * 0.85, 0.2, Math.PI - 0.2);
+    ctx.fill();
+    
+    // Rear wheel well
+    ctx.beginPath();
+    ctx.arc(this.wheelRight, this.wheelY, this.wheelRadius * 0.85, 0.2, Math.PI - 0.2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  /**
+   * Draw enhanced wheel with tires, rims, spokes, and rotation marks
+   */
+  _drawEnhancedWheel(x, y, radius, colors) {
+    const ctx = this.ctx;
     
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(this.wheelSpin);
     
-    // Tire
+    // Dark tire
     ctx.fillStyle = colors.grid;
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.fill();
     
-    // Rim
+    // Tire wall (slightly darker edge)
+    ctx.strokeStyle = colors.bgInset;
+    ctx.lineWidth = radius * 0.15;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.93, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    
+    // Rim (lighter inner circle)
     ctx.fillStyle = colors.border;
     ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.7, 0, Math.PI * 2);
+    ctx.arc(0, 0, radius * 0.65, 0, Math.PI * 2);
     ctx.fill();
     
-    // Spokes (5 spokes)
+    // 5-spoke pattern (star shape)
     ctx.strokeStyle = colors.text;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     for (let i = 0; i < 5; i++) {
       const angle = (i * Math.PI * 2) / 5;
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(Math.cos(angle) * radius * 0.6, Math.sin(angle) * radius * 0.6);
+      ctx.lineTo(Math.cos(angle) * radius * 0.55, Math.sin(angle) * radius * 0.55);
       ctx.stroke();
     }
     
     // Center cap
     ctx.fillStyle = colors.accentA;
     ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.2, 0, Math.PI * 2);
+    ctx.arc(0, 0, radius * 0.18, 0, Math.PI * 2);
     ctx.fill();
     
+    // Rotation tick marks (subtle)
+    ctx.strokeStyle = colors.text;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 12; i++) {
+      const angle = (i * Math.PI * 2) / 12;
+      const x1 = Math.cos(angle) * radius * 0.80;
+      const y1 = Math.sin(angle) * radius * 0.80;
+      const x2 = Math.cos(angle) * radius * 0.88;
+      const y2 = Math.sin(angle) * radius * 0.88;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    
     ctx.restore();
+  }
+  
+  /**
+   * Draw car outline with double-stroke (outer + inner) using theme colors
+   */
+  _drawCarOutline(colors) {
+    const ctx = this.ctx;
+    const w = this.carW;
+    const h = this.carH;
+    
+    // Draw body outline path again
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.48, -h * 0.18);
+    ctx.lineTo(-w * 0.38, -h * 0.35);
+    ctx.lineTo(-w * 0.30, -h * 0.5);
+    ctx.lineTo(w * 0.25, -h * 0.5);
+    ctx.lineTo(w * 0.30, -h * 0.35);
+    ctx.lineTo(w * 0.48, -h * 0.25);
+    ctx.lineTo(w * 0.48, h * 0.5);
+    ctx.lineTo(-w * 0.48, h * 0.5);
+    ctx.closePath();
+    
+    // Outer stroke (darker, theme border)
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    
+    // Inner stroke (lighter, theme accent)
+    ctx.strokeStyle = colors.accentA;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  
+  /**
+   * Draw specular highlight strip on side (low alpha, lighting effect)
+   */
+  _drawSpecularHighlight(colors) {
+    const ctx = this.ctx;
+    const w = this.carW;
+    const h = this.carH;
+    
+    const [ar, ag, ab] = UIHelpers._parseRGB(colors.accentGreen || '#00ff88');
+    ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, 0.08)`;
+    
+    // Thin vertical strip along upper-middle body
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.25, -h * 0.35);
+    ctx.lineTo(-w * 0.20, -h * 0.35);
+    ctx.lineTo(w * 0.15, -h * 0.15);
+    ctx.lineTo(w * 0.10, -h * 0.15);
+    ctx.closePath();
+    ctx.fill();
+  }
+  
+  /**
+   * Draw road streaks (motion blur effect)
+   */
+  _drawRoadStreaks() {
+    const ctx = this.ctx;
+    const colors = THEME.colors;
+    const w = this.drawRect.w;
+    const h = this.drawRect.h;
+    
+    if (this.roadSpeed < 0.1) return; // Only visible when moving
+    
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.15;
+    
+    const streakCount = 3;
+    const streakX = -w * 0.5 + (this.roadScroll * 0.3) % w;
+    
+    for (let i = 0; i < streakCount; i++) {
+      ctx.beginPath();
+      ctx.moveTo(streakX + i * (w / streakCount), h * 0.55);
+      ctx.lineTo(streakX + i * (w / streakCount) - 20, h * 0.65);
+      ctx.stroke();
+    }
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  /**
+   * Draw wheel with rotating spokes (DEPRECATED - use _drawEnhancedWheel)
+   */
+  _drawWheel(x, y, radius) {
+    // This function has been replaced with _drawEnhancedWheel which includes
+    // tire walls, rotation marks, and improved rim/spoke design
+    return;
   }
   
   /**
