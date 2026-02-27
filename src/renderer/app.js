@@ -556,6 +556,9 @@
 
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
+    analyser.minDecibels = -100;
+    analyser.maxDecibels = -12;
+    analyser.smoothingTimeConstant = 0.6;
     const bufferLength = analyser.fftSize;
     dataArray = new Float32Array(bufferLength);
     const freqBinCount = analyser.frequencyBinCount;
@@ -1937,11 +1940,16 @@
   
   // State: band edges, smoothing buffers, and analyzer parameters
   let specBandState = null;
+  let specColumnSmooth = null;
+  let specFloatBins = null;
   const SPEC_EMA_ALPHA = 0.28;        // EMA smoothing (0.25-0.35 recommended)
   const SPEC_TILT_DB_OCT = 1.5;       // 1.5 dB/octave tilt (0 to disable)
   const SPEC_TILT_REF_HZ = 1000;      // Reference frequency for tilt
   const SPEC_BANDS_PER_OCTAVE = 12;   // 1/12 octave bands
   const SPEC_NOISE_FLOOR = -89;       // Below this dB level, don't display bars (noise suppression)
+  const SPEC_X_WARP = 1.2;            // >1 compresses low-frequency spacing on X axis
+  const SPEC_DB_MIN = -90;
+  const SPEC_DB_MAX = -12;
   
   /**
    * Generate log-spaced band edges (1/octave subdivision)
@@ -2057,18 +2065,36 @@
     const graphH = h - axisH;
     const colors = THEME.colors;
     const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
-    
-    // Aggregate FFT into log bands with smoothing
-    const state = aggregateSpectrumBands(freq);
-    const bands = state.bands;
-    const smoothedDb = state.smoothed;
+    const plotW = Math.max(1, Math.floor(w));
     const minHz = 20;
-    const maxHz = state.maxHz;
+    const nyquist = (sampleRate || 48000) / 2;
+    const maxHz = Math.min(20000, nyquist);
     
     // dB scale parameters
-    const dbMin = -80;
-    const dbMax = 12;
+    const dbMin = SPEC_DB_MIN;
+    const dbMax = SPEC_DB_MAX;
     const dbRange = dbMax - dbMin;
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    
+    // Pull live float spectrum data directly from analyser
+    const binCount = analyser && analyser.frequencyBinCount ? analyser.frequencyBinCount : 1024;
+    if (!specFloatBins || specFloatBins.length !== binCount) {
+      specFloatBins = new Float32Array(binCount);
+    }
+    
+    const analyserRunning = analyser && audioCtx && audioCtx.state === 'running';
+    if (analyserRunning) {
+      analyser.getFloatFrequencyData(specFloatBins);
+    } else {
+      specFloatBins.fill(dbMin);
+    }
+    
+    // EMA smoothing buffer per x-column (after aggregation)
+    if (!specColumnSmooth || specColumnSmooth.length !== plotW) {
+      specColumnSmooth = new Float32Array(plotW);
+      specColumnSmooth.fill(dbMin);
+    }
     
     const logMin = Math.log10(minHz);
     const logMax = Math.log10(maxHz);
@@ -2079,9 +2105,15 @@
       return (Math.log10(hz) - logMin) / (logMax - logMin);
     };
     
+    const xToFreq = (x) => {
+      if (plotW <= 1) return minHz;
+      const ratio = x / (plotW - 1);
+      return minHz * Math.pow(maxHz / minHz, ratio);
+    };
+    
     const dbToYNorm = (db) => {
-      // Map dB range [dbMin, dbMax] to [1, 0] (inverted: low dB at top)
-      const normalized = Math.max(0, Math.min(1, (db - dbMin) / dbRange));
+      // Map dB range [dbMin, dbMax] to [1, 0] (high dB near top)
+      const normalized = clamp01((db - dbMin) / dbRange);
       return 1 - normalized; // Invert
     };
     
@@ -2096,7 +2128,7 @@
     
     // --- DRAW dB GRID (Y-AXIS) ---
     const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
-    const dbGridValues = [12, 6, 0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72, -80];
+    const dbGridValues = [-12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72, -78, -84, -90];
     
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.25)`;
     specGraphCtx.lineWidth = 1;
@@ -2124,40 +2156,57 @@
       specGraphCtx.fillText(db + 'dB', w - 3, yPos);
     }
     
-    // --- DRAW SPECTRUM BARS (AGGREGATED BANDS) ---
-    const barGap = 1; // pixels between bars
-    const barsPerScreen = bands.length;
-    const totalBarWidth = barsPerScreen > 0 ? w / barsPerScreen : 1;
-    const barW = Math.max(0.5, totalBarWidth - barGap);
+    // --- DRAW SPECTRUM BARS (PER-PIXEL LOG COLUMNS, NO GAPS) ---
+    const fftSize = analyser && analyser.fftSize ? analyser.fftSize : (specFloatBins.length * 2);
+    const sr = sampleRate || 48000;
     
-    for (let bIdx = 0; bIdx < bands.length; bIdx++) {
-      const band = bands[bIdx];
-      const dbVal = smoothedDb[bIdx];
-      
-      // Apply tilt compensation: more bass boost, less treble
-      const octaveOffset = Math.log2(band.freqHz / SPEC_TILT_REF_HZ);
-      const tiltDb = SPEC_TILT_DB_OCT * octaveOffset;
-      let displayDb = dbVal - tiltDb;
-      
-      // Soft compression for values above dbMax (prevent bars from hitting top)
-      if (displayDb > dbMax) {
-        const over = displayDb - dbMax;
-        displayDb = dbMax + over * 0.15;
+    for (let x = 0; x < plotW; x++) {
+      const f0 = xToFreq(x);
+      const f1 = xToFreq(Math.min(plotW - 1, x + 1));
+      let i0 = Math.floor((f0 * fftSize) / sr);
+      let i1 = Math.ceil((f1 * fftSize) / sr);
+      i0 = clamp(i0, 0, specFloatBins.length - 1);
+      i1 = clamp(i1, 0, specFloatBins.length - 1);
+      if (i1 < i0) {
+        i1 = i0;
+      }
+      if (i1 < i0 + 1 && i0 < specFloatBins.length - 1) {
+        i1 = i0 + 1;
       }
       
-      // Map to pixel height
-      const yNorm = dbToYNorm(displayDb);
-      const barH = yNorm * graphH;
-      const barY = graphH - barH;
-      const barX = (bIdx / barsPerScreen) * w;
+      // Aggregate by MAX dB for readability
+      let dbCol = -Infinity;
+      for (let i = i0; i <= i1; i++) {
+        const db = specFloatBins[i];
+        if (db > dbCol) {
+          dbCol = db;
+        }
+      }
+      if (!Number.isFinite(dbCol)) {
+        dbCol = dbMin;
+      }
       
-      // Unconditional HSL color per bar: green->cyan hue ramp, lightness modulated by dB
-      const N = bands.length;
-      const hue = 140 + 60 * (bIdx / Math.max(1, N - 1));
-      const t = Math.max(0, Math.min(1, (displayDb - dbMin) / dbRange));
-      const light = 20 + 45 * t;
+      // Apply tilt in dB domain (keep negative values)
+      const fCenter = Math.sqrt(f0 * f1);
+      const octaveOffset = Math.log2(Math.max(1, fCenter) / SPEC_TILT_REF_HZ);
+      const dbTilted = dbCol + (SPEC_TILT_DB_OCT * octaveOffset);
+      const dbClamped = clamp(dbTilted, dbMin, dbMax);
+      
+      // EMA smoothing AFTER aggregation
+      const prev = specColumnSmooth[x];
+      const smoothDb = prev + SPEC_EMA_ALPHA * (dbClamped - prev);
+      specColumnSmooth[x] = smoothDb;
+      
+      // Correct dB->height mapping (silence at bottom)
+      const norm = clamp01((smoothDb - dbMin) / dbRange);
+      const barH = norm * graphH;
+      const y = graphH - barH;
+      
+      // Keep existing color style (green->cyan with level-based lightness)
+      const hue = 140 + 60 * (x / Math.max(1, plotW - 1));
+      const light = 20 + 45 * norm;
       specGraphCtx.fillStyle = `hsl(${hue} 95% ${light}%)`;
-      specGraphCtx.fillRect(barX, barY, barW, barH);
+      specGraphCtx.fillRect(x, y, 1, barH);
     }
     
     // --- DRAW FREQUENCY AXIS (X-AXIS) ---
