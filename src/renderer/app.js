@@ -1941,6 +1941,7 @@
   const SPEC_TILT_DB_OCT = 1.5;       // 1.5 dB/octave tilt (0 to disable)
   const SPEC_TILT_REF_HZ = 1000;      // Reference frequency for tilt
   const SPEC_BANDS_PER_OCTAVE = 12;   // 1/12 octave bands
+  const SPEC_NOISE_FLOOR = -89;       // Below this dB level, don't display bars (noise suppression)
   
   /**
    * Generate log-spaced band edges (1/octave subdivision)
@@ -2133,6 +2134,11 @@
       const band = bands[bIdx];
       const dbVal = smoothedDb[bIdx];
       
+      // Skip bars below noise floor (suppress constant grey noise)
+      if (dbVal < SPEC_NOISE_FLOOR) {
+        continue;
+      }
+      
       // Apply tilt compensation: more bass boost, less treble
       const octaveOffset = Math.log2(band.freqHz / SPEC_TILT_REF_HZ);
       const tiltDb = SPEC_TILT_DB_OCT * octaveOffset;
@@ -2198,7 +2204,7 @@
     specGraphCtx.font = 'bold 12px sans-serif';
     specGraphCtx.textAlign = 'left';
     specGraphCtx.textBaseline = 'top';
-    specGraphCtx.fillText('Spectrum (log 20Hz–20kHz, EMA 0.28, +3dB/oct tilt)', 4, 2);
+    specGraphCtx.fillText('Spectrum (log 20Hz–20kHz, EMA 0.28, 1.5dB/oct tilt)', 4, 2);
     
     // Apply theme overlays (scanlines, noise, glitter)
     if (window.CanvasOverlays) {
