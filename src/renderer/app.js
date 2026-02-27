@@ -1691,6 +1691,16 @@
       
       const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
       
+      // Debug: log first call only
+      if(!window._minmaxDebugLogged) {
+        console.log('[drawMinMax] data.length=' + data.length + 
+                    ' startIdx=' + startIdx + 
+                    ' rect.w=' + rect.w + 
+                    ' rect.h=' + rect.h +
+                    ' samplesPerPixel=' + samplesPerPixel);
+        window._minmaxDebugLogged = true;
+      }
+      
       for(let x = 0; x < rect.w; x++) {
         const startSample = startIdx + x * samplesPerPixel;
         const endSample = Math.min(startSample + samplesPerPixel, data.length);
@@ -1707,8 +1717,11 @@
           if(v > max) max = v;
         }
         
-        // Skip drawing if no samples were found in this range
-        if(min === Infinity || max === -Infinity) continue;
+        // Always draw, even if no samples in range - use center line as fallback
+        if(min === Infinity || max === -Infinity) {
+          min = 0;
+          max = 0;
+        }
         
         const yMin = rect.y + (0.5 - min * 0.45) * rect.h;
         const yMax = rect.y + (0.5 - max * 0.45) * rect.h;
