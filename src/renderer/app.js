@@ -1995,53 +1995,100 @@
     }
   }
 
-  function colorForValue(v){
-    // DOOM theme: inferno-like colormap (black→red→orange→yellow→white)
-    if (window.THEME && window.THEME.currentPalette === 'doom') {
-      // Inferno colormap approximation: 5-point gradient
-      const val = Math.max(0, Math.min(1, v)); // Clamp to 0-1
-      if (val < 0.2) {
-        // Black → Red (0.0 - 0.2)
-        const t = val / 0.2; // 0-1 in this segment
-        const r = Math.round(50 + t * 150); // 50→200
-        const g = Math.round(10 + t * 20);  // 10→30
-        const b = Math.round(20 + t * 30);  // 20→50
-        return `rgb(${r}, ${g}, ${b})`;
-      } else if (val < 0.4) {
-        // Red → Orange (0.2 - 0.4)
-        const t = (val - 0.2) / 0.2;
-        const r = Math.round(200 + t * 55); // 200→255
-        const g = Math.round(30 + t * 90);  // 30→120
-        const b = Math.round(50 - t * 50);  // 50→0
-        return `rgb(${r}, ${g}, ${b})`;
-      } else if (val < 0.6) {
-        // Orange → Yellow (0.4 - 0.6)
-        const t = (val - 0.4) / 0.2;
-        const r = 255;
-        const g = Math.round(120 + t * 135); // 120→255
-        const b = 0;
-        return `rgb(${r}, ${g}, ${b})`;
-      } else if (val < 0.8) {
-        // Yellow → Light Yellow (0.6 - 0.8)
-        const t = (val - 0.6) / 0.2;
-        const r = 255;
-        const g = 255;
-        const b = Math.round(0 + t * 100); // 0→100
-        return `rgb(${r}, ${g}, ${b})`;
-      } else {
-        // Light Yellow → White (0.8 - 1.0)
-        const t = (val - 0.8) / 0.2;
-        const r = 255;
-        const g = 255;
-        const b = Math.round(100 + t * 155); // 100→255
-        return `rgb(${r}, ${g}, ${b})`;
+  function interpolateColor(stops, value) {
+    // Helper: interpolate between color stops
+    const v = Math.max(0, Math.min(1, value));
+    
+    let lower = stops[0];
+    let upper = stops[stops.length - 1];
+    
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (stops[i].stop <= v && stops[i + 1].stop >= v) {
+        lower = stops[i];
+        upper = stops[i + 1];
+        break;
       }
     }
     
-    // Default HSL colormap for other themes
-    const hue = Math.round((1 - v) * 240); // blue->red
-    const sat = 85; const light = Math.round(30 + v*40);
-    return `hsl(${hue}, ${sat}%, ${light}%)`;
+    const range = upper.stop - lower.stop;
+    const t = range === 0 ? 0 : (v - lower.stop) / range;
+    
+    // Parse hex colors
+    const parseHex = (hex) => {
+      const h = hex.slice(1);
+      return [
+        parseInt(h.slice(0, 2), 16),
+        parseInt(h.slice(2, 4), 16),
+        parseInt(h.slice(4, 6), 16)
+      ];
+    };
+    
+    const lowerRGB = parseHex(lower.color);
+    const upperRGB = parseHex(upper.color);
+    
+    const r = Math.round(lowerRGB[0] + (upperRGB[0] - lowerRGB[0]) * t);
+    const g = Math.round(lowerRGB[1] + (upperRGB[1] - lowerRGB[1]) * t);
+    const b = Math.round(lowerRGB[2] + (upperRGB[2] - lowerRGB[2]) * t);
+    
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  function colorForValue(v){
+    if (!window.THEME) {
+      const hue = Math.round((1 - v) * 240);
+      const sat = 85;
+      const light = Math.round(30 + v * 40);
+      return `hsl(${hue}, ${sat}%, ${light}%)`;
+    }
+
+    // Theme-based spectro color palettes
+    const palette = window.THEME.currentPalette || 'ps2';
+    
+    const palettes = {
+      ps2: [
+        { stop: 0.0, color: '#0A0F1A' },
+        { stop: 0.15, color: '#1A3366' },
+        { stop: 0.35, color: '#3D8EFF' },
+        { stop: 0.55, color: '#00C8DC' },
+        { stop: 0.75, color: '#9D6FE8' },
+        { stop: 1.0, color: '#FFFFFF' }
+      ],
+      neon: [
+        { stop: 0.0, color: '#050A14' },
+        { stop: 0.2, color: '#0A2A4A' },
+        { stop: 0.4, color: '#00AAE5' },
+        { stop: 0.6, color: '#00E5FF' },
+        { stop: 0.8, color: '#FF3DF2' },
+        { stop: 1.0, color: '#FFFFFF' }
+      ],
+      doom: [
+        { stop: 0.0, color: '#120808' },
+        { stop: 0.25, color: '#4D2216' },
+        { stop: 0.45, color: '#FF3333' },
+        { stop: 0.65, color: '#FF8B33' },
+        { stop: 0.85, color: '#FFCC00' },
+        { stop: 1.0, color: '#FFFFFF' }
+      ],
+      glitter: [
+        { stop: 0.0, color: '#180D24' },
+        { stop: 0.2, color: '#4A2962' },
+        { stop: 0.4, color: '#A855B8' },
+        { stop: 0.6, color: '#FF4FD8' },
+        { stop: 0.8, color: '#D4A5FF' },
+        { stop: 1.0, color: '#FFFFFF' }
+      ],
+      nuclear: [
+        { stop: 0.0, color: '#07110A' },
+        { stop: 0.2, color: '#0E2B1A' },
+        { stop: 0.4, color: '#00AA44' },
+        { stop: 0.6, color: '#00FF66' },
+        { stop: 0.8, color: '#00D1FF' },
+        { stop: 1.0, color: '#FFFFFF' }
+      ]
+    };
+    
+    const stops = palettes[palette] || palettes.ps2;
+    return interpolateColor(stops, v);
   }
 
   function computeCorrelation(L, R){
