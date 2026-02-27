@@ -1695,6 +1695,10 @@
       // Ensure minimum line height of 2 pixels when min === max
       const minPixelHeight = 2.0;
       
+      // Build path once with all min/max lines, then stroke once
+      ctx.beginPath();
+      let pathBuilt = false;
+      
       for(let x = 0; x < rect.w; x++) {
         const startSample = startIdx + Math.floor(x * sampleIndexRatio);
         const endSample = Math.min(Math.floor((x + 1) * sampleIndexRatio), data.length);
@@ -1730,11 +1734,14 @@
         
         const xPos = rect.x + x;
         
-        ctx.beginPath();
+        // Add vertical line to path
         ctx.moveTo(xPos, yMin);
         ctx.lineTo(xPos, yMax);
-        ctx.stroke();
+        pathBuilt = true;
       }
+      
+      // Stroke all lines at once for consistent rendering
+      if(pathBuilt) ctx.stroke();
     }
     
     drawTriggerMarker(ctx, rect) {
