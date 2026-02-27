@@ -1689,7 +1689,8 @@
       const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
       ctx.lineWidth = isPS2 ? 1.5 : 1;
       
-      const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
+      // Map sample indices to pixels - handle case where data.length > rect.w
+      const sampleIndexRatio = Math.max(1, data.length / rect.w);
       
       // Debug: log first call only
       if(!window._minmaxDebugLogged) {
@@ -1697,13 +1698,13 @@
                     ' startIdx=' + startIdx + 
                     ' rect.w=' + rect.w + 
                     ' rect.h=' + rect.h +
-                    ' samplesPerPixel=' + samplesPerPixel);
+                    ' sampleIndexRatio=' + sampleIndexRatio.toFixed(2));
         window._minmaxDebugLogged = true;
       }
       
       for(let x = 0; x < rect.w; x++) {
-        const startSample = startIdx + x * samplesPerPixel;
-        const endSample = Math.min(startSample + samplesPerPixel, data.length);
+        const startSample = startIdx + Math.floor(x * sampleIndexRatio);
+        const endSample = Math.min(Math.floor((x + 1) * sampleIndexRatio), data.length);
         
         // Skip if we've run out of data
         if(startSample >= data.length) break;
