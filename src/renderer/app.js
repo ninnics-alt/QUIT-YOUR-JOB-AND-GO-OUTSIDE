@@ -279,7 +279,7 @@
   const releaseTime = 0.25; // seconds
   
   // UI display smoothing (for text elements)
-  const UI_RMS_TAU = 0.250;
+  const UI_RMS_TAU = 0.100;
   const UI_PEAK_TAU = 0.120;
   const UI_HOLD_FREEZE = 0.800;
   const UI_HOLD_DECAY_DB_PER_SEC = 12.0;
@@ -1077,6 +1077,22 @@
 
     // Trace styles - use theme-specific trace color
     const traceColor = colors.trace || colors.accentGreen || '#00ff88';
+    const isNeonTheme = window.THEME && window.THEME.currentPalette === 'neon';
+    
+    // Calculate amplitude for bloom scaling (RMS-based energy measure)
+    let ampNorm = 0;
+    if (isNeonTheme && vsPointCount > 0) {
+      let sumSq = 0;
+      for (let i = 0; i < vsPointCount; i++) {
+        const dx = vsPointsX[i] - centerX;
+        const dy = vsPointsY[i] - centerY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        sumSq += (dist / radius) * (dist / radius);
+      }
+      const rms = Math.sqrt(sumSq / vsPointCount);
+      ampNorm = Math.min(1.0, rms * 1.5); // Scale and clamp
+    }
+    
     if(vsStyle === 'phosphor'){
       // Fade persistence buffer (faster: less aggressive fade, no shadow blur)
       vsBufCtx.globalCompositeOperation = 'source-over';
@@ -1085,11 +1101,25 @@
       vsBufCtx.fillRect(0, 0, vsBuffer.width, vsBuffer.height);
       vsBufCtx.globalAlpha = 1;
 
-      // Single-pass direct draw to persistence buffer (no shadow blur)
+      // Single-pass direct draw to persistence buffer
       vsBufCtx.globalCompositeOperation = 'lighter';
       const dot = Math.max(1, vsDotSize * dpr);
 
-      // Draw directly without expensive shadow
+      // NEON ARCADE BLOOM: Draw glow layer first, then sharp trace on top
+      if (isNeonTheme && ampNorm > 0.05) {
+        // Bloom layer - thickness and intensity scale with amplitude
+        const bloomIntensity = Math.max(0.10, Math.min(0.60, 0.15 + 0.45 * ampNorm));
+        const bloomWidth = Math.max(3, dot * 2.5);
+        vsBufCtx.globalAlpha = bloomIntensity;
+        for(let i = 0; i < vsPointCount; i++){
+          const px = vsPointsX[i] * dpr;
+          const py = vsPointsY[i] * dpr;
+          vsBufCtx.fillStyle = traceColor;
+          vsBufCtx.fillRect(px - bloomWidth * 0.5, py - bloomWidth * 0.5, bloomWidth, bloomWidth);
+        }
+      }
+      
+      // Sharp trace layer on top
       vsBufCtx.globalAlpha = 0.9;
       for(let i = 0; i < vsPointCount; i++){
         const px = vsPointsX[i] * dpr;
@@ -2054,12 +2084,13 @@
         { stop: 1.0, color: '#FFFFFF' }
       ],
       neon: [
-        { stop: 0.0, color: '#050A14' },
-        { stop: 0.2, color: '#0A2A4A' },
-        { stop: 0.4, color: '#00AAE5' },
-        { stop: 0.6, color: '#00E5FF' },
-        { stop: 0.8, color: '#FF3DF2' },
-        { stop: 1.0, color: '#FFFFFF' }
+        { stop: 0.0, color: '#050A14' },   // Deep navy
+        { stop: 0.2, color: '#0A2550' },   // Navy blue
+        { stop: 0.35, color: '#00AAE5' },  // Electric blue
+        { stop: 0.55, color: '#00E5FF' },  // Bright cyan
+        { stop: 0.75, color: '#FF3DF2' },  // Hot magenta
+        { stop: 0.90, color: '#FF9FF0' },  // Pink
+        { stop: 1.0, color: '#FFFFFF' }    // Near-white
       ],
       doom: [
         { stop: 0.0, color: '#120808' },
@@ -2084,6 +2115,14 @@
         { stop: 0.6, color: '#00FF66' },
         { stop: 0.8, color: '#00D1FF' },
         { stop: 1.0, color: '#FFFFFF' }
+      ],
+      monochrome: [
+        { stop: 0.0, color: '#0A0A0A' },   // Near black
+        { stop: 0.2, color: '#2A2A2A' },   // Dark gray
+        { stop: 0.4, color: '#555555' },   // Mid gray
+        { stop: 0.6, color: '#888888' },   // Light gray
+        { stop: 0.8, color: '#BBBBBB' },   // Lighter gray
+        { stop: 1.0, color: '#FFFFFF' }    // White
       ]
     };
     

@@ -56,6 +56,11 @@ const THEMES = {
     
     // Spectrogram palette
     spectroPaletteName: 'ps2',
+    
+    // Meter fonts - PlayStation console era
+    meterFontValue: 'system-ui, -apple-system, sans-serif',
+    meterFontLabel: 'ui-monospace, monospace',
+    meterFontTitle: 'system-ui, -apple-system, sans-serif',
   },
   
   neon: {
@@ -98,6 +103,11 @@ const THEMES = {
     
     // Spectrogram palette
     spectroPaletteName: 'neon',
+    
+    // Meter fonts - Arcade rounded
+    meterFontValue: 'Georgia, serif',
+    meterFontLabel: 'ui-monospace, monospace',
+    meterFontTitle: 'Georgia, serif',
   },
   
   doom: {
@@ -159,6 +169,11 @@ const THEMES = {
     
     // Spectrogram palette
     spectroPaletteName: 'doom',
+    
+    // Meter fonts - Hell-tech engraved
+    meterFontValue: 'Courier, monospace',
+    meterFontLabel: 'ui-monospace, monospace',
+    meterFontTitle: 'Courier, monospace',
   },
   
   glitter: {
@@ -201,6 +216,11 @@ const THEMES = {
     
     // Spectrogram palette
     spectroPaletteName: 'cottoncandy',
+    
+    // Meter fonts - Playful handwritten
+    meterFontValue: 'cursive, sans-serif',
+    meterFontLabel: 'system-ui, sans-serif',
+    meterFontTitle: 'cursive',
   },
   
   nuclear: {
@@ -243,6 +263,68 @@ const THEMES = {
     
     // Spectrogram palette
     spectroPaletteName: 'nuclear',
+    
+    // Meter fonts - Terminal/Radiation display
+    meterFontValue: 'Times New Roman, serif',
+    meterFontLabel: 'Times New Roman, serif',
+    meterFontTitle: 'Times New Roman, serif',
+  },
+  
+  monochrome: {
+    // Base colors - Utilitarian / Photocopied aesthetic
+    bgPrimary: '#050505',
+    bgPanel: '#0C0C0C',
+    bgPanel2: '#0F0F0F',
+    bgInset: '#020202',
+    border: '#2A2A2A',
+    borderSoft: '#3A3A3A',
+    grid: '#181818',
+    text: '#EAEAEA',
+    textMuted: '#A8A8A8',
+    textDim: '#707070',
+    
+    // Accents - Extremely limited, faint gray-blue for focus
+    accentA: '#DADADA',
+    accentB: '#BFC7D0',
+    accentGood: '#CCCCCC',
+    accentWarn: '#D0D0D0',
+    accentBad: '#F0F0F0',
+    
+    // Effects - Minimal, flat surfaces
+    glow: 'rgba(255, 255, 255, 0.02)',
+    shadow: 'rgba(0, 0, 0, 0.65)',
+    gridLine: '#2A2A2A',
+    scanlineOpacity: 0.03,
+    noiseOpacity: 0.04,
+    sparkleOpacity: 0,
+    
+    // Bevel effect tokens - Flat
+    bevelLight: 'rgba(255, 255, 255, 0.05)',
+    bevelDark: 'rgba(0, 0, 0, 0.5)',
+    
+    // Minimal effects
+    phosphorStrength: 0,
+    ditheringStrength: 0.02,
+    bloomStrength: 0,
+    vignetteStrength: 0.08,
+    
+    // Meter colors - Grayscale
+    meterGood: '#CCCCCC',
+    meterWarn: '#D8D8D8',
+    meterClip: '#FFFFFF',
+    
+    // Waveform/trace colors - White/gray
+    waveformL: '#FFFFFF',
+    waveformR: '#DADADA',
+    trace: '#FFFFFF',
+    
+    // Spectrogram palette
+    spectroPaletteName: 'monochrome',
+    
+    // Meter fonts - Utilitarian monospace
+    meterFontValue: 'Monaco, monospace',
+    meterFontLabel: 'Monaco, monospace',
+    meterFontTitle: 'Monaco, monospace',
   },
 };
 
@@ -269,15 +351,37 @@ const THEME = {
   get gridLight() { return this.colors.border; },
   get gridDark() { return this.colors.grid; },
 
-  // Typography
+  // Typography with per-theme meter fonts
   fonts: {
     mono: '11px "Monaco", "Courier New", monospace',
-    monoSmall: '9px "Monaco", "Courier New", monospace',
+    // Meter label font (dynamic per theme)
+    get monoSmall() {
+      const themeFonts = THEMES[THEME.currentPalette];
+      console.log('[THEME monoSmall getter] currentPalette:', THEME.currentPalette, 'themeFonts:', themeFonts);
+      if (themeFonts && themeFonts.meterFontLabel) {
+        return `9px ${themeFonts.meterFontLabel}`;
+      }
+      return '9px "Monaco", "Courier New", monospace';
+    },
     monoBold: 'bold 11px "Monaco", "Courier New", monospace',
-    monoBoldLarge: 'bold 24px "Monaco", "Courier New", monospace',
+    // Meter value font (dynamic per theme)
+    get monoBoldLarge() {
+      const themeFonts = THEMES[THEME.currentPalette];
+      if (themeFonts && themeFonts.meterFontValue) {
+        return `bold 24px ${themeFonts.meterFontValue}`;
+      }
+      return 'bold 24px "Monaco", "Courier New", monospace';
+    },
     sansRegular: '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     sansBold: 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    sansLarge: 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    // Meter title font (dynamic per theme)
+    get sansLarge() {
+      const themeFonts = THEMES[THEME.currentPalette];
+      if (themeFonts && themeFonts.meterFontTitle) {
+        return `bold 18px ${themeFonts.meterFontTitle}`;
+      }
+      return 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    },
   },
 
   // Spacing scale (4px grid)

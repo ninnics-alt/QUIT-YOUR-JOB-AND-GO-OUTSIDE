@@ -5,13 +5,15 @@
 
 class MeterDisplay {
   constructor(canvasId) {
+    console.log('[METERS] MeterDisplay constructor called with canvasId:', canvasId);
     this.canvas = document.getElementById(canvasId);
+    console.log('[METERS] Canvas element:', this.canvas);
     if (!this.canvas) {
-      console.error('[MeterDisplay] Canvas element not found:', canvasId);
+      console.error('[METERS] Canvas element not found:', canvasId);
       return;
     }
     this.ctx = this.canvas.getContext('2d');
-    console.log('[MeterDisplay] Initialized:', canvasId);
+    console.log('[METERS] Canvas ready, size:', this.canvas.width, 'x', this.canvas.height);
 
     // Data
     this.lufsIntegrated = 0;
@@ -40,12 +42,17 @@ class MeterDisplay {
   }
 
   render() {
+    console.log('[METERS] render() called');
     if (!this.ctx) return;
     
     // Use current canvas client dimensions (CSS pixels)
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     const colors = THEME.colors;
+    
+    // Get theme-specific fonts (direct access to invoke getters)
+    const fonts = THEME.fonts;
+    console.log('[METERS] Theme:', THEME.currentPalette, 'sansLarge font:', fonts.sansLarge);
     
     // Background
     this.ctx.fillStyle = colors.bgPrimary;
@@ -56,10 +63,10 @@ class MeterDisplay {
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(0, 0, w, h);
     
-    // Title - responsive font size
+    // Title - use theme meter title font
     const titleSize = Math.max(12, Math.min(16, h * 0.08));
     this.ctx.fillStyle = colors.text;
-    this.ctx.font = `bold ${titleSize}px monospace`;
+    this.ctx.font = fonts.sansLarge;  // Use theme's meter title font
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'top';
     this.ctx.fillText('LEVEL METERS', 12, 8);
@@ -99,16 +106,16 @@ class MeterDisplay {
       const labelSize = Math.max(9, Math.min(12, meterH * 0.12));
       const valueSize = Math.max(14, Math.min(28, meterH * 0.35));
       
-      // Label
+      // Label - use theme meter label font
       this.ctx.fillStyle = colors.textMuted;
-      this.ctx.font = `${labelSize}px monospace`;
+      this.ctx.font = fonts.monoSmall;  // Use theme's meter label font
       this.ctx.textAlign = 'left';
       this.ctx.textBaseline = 'top';
       this.ctx.fillText(m.label, m.x + 6, m.y + 4);
       
-      // Value
+      // Value - use theme meter value font
       this.ctx.fillStyle = colors.accentB;
-      this.ctx.font = `bold ${valueSize}px monospace`;
+      this.ctx.font = fonts.monoBoldLarge;  // Use theme's meter value font
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       const valueStr = m.value.toFixed(1);
