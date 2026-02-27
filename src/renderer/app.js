@@ -1938,7 +1938,7 @@
   // State: band edges, smoothing buffers, and analyzer parameters
   let specBandState = null;
   const SPEC_EMA_ALPHA = 0.28;        // EMA smoothing (0.25-0.35 recommended)
-  const SPEC_TILT_DB_OCT = 3.0;       // 3 dB/octave tilt (0 to disable)
+  const SPEC_TILT_DB_OCT = 1.5;       // 1.5 dB/octave tilt (0 to disable)
   const SPEC_TILT_REF_HZ = 1000;      // Reference frequency for tilt
   const SPEC_BANDS_PER_OCTAVE = 12;   // 1/12 octave bands
   
@@ -2065,8 +2065,8 @@
     const maxHz = state.maxHz;
     
     // dB scale parameters
-    const dbMin = -72;
-    const dbMax = 6;
+    const dbMin = -80;
+    const dbMax = 12;
     const dbRange = dbMax - dbMin;
     
     const logMin = Math.log10(minHz);
@@ -2095,7 +2095,7 @@
     
     // --- DRAW dB GRID (Y-AXIS) ---
     const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
-    const dbGridValues = [6, 0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72];
+    const dbGridValues = [12, 6, 0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72, -80];
     
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.25)`;
     specGraphCtx.lineWidth = 1;
@@ -2136,7 +2136,13 @@
       // Apply tilt compensation: more bass boost, less treble
       const octaveOffset = Math.log2(band.freqHz / SPEC_TILT_REF_HZ);
       const tiltDb = SPEC_TILT_DB_OCT * octaveOffset;
-      const displayDb = dbVal - tiltDb;
+      let displayDb = dbVal - tiltDb;
+      
+      // Soft compression for values above dbMax (prevent bars from hitting top)
+      if (displayDb > dbMax) {
+        const over = displayDb - dbMax;
+        displayDb = dbMax + over * 0.15;
+      }
       
       // Map to pixel height
       const yNorm = dbToYNorm(displayDb);
