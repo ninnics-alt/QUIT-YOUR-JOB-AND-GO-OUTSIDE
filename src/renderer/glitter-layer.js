@@ -9,8 +9,8 @@ class GlitterLayer {
     this.ctx = canvas.getContext('2d');
     this.isActive = false;
     
-    // Preallocated particle pool
-    this.particleCount = 60;
+    // Preallocated particle pool - reduced from 60 to 30 for performance
+    this.particleCount = 30;
     this.particles = new Float32Array(this.particleCount * 5); // x, y, size, alpha, phase
     
     // Tile drift animation
@@ -25,6 +25,11 @@ class GlitterLayer {
     
     // Time accumulator
     this.time = 0;
+    
+    // Cached theme colors (updated when theme changes)
+    this.cachedAccentA = '#FF4FD8';
+    this.cachedAccentB = '#D4A5FF';
+    this._lastThemePalette = null;
     
     // Initialize particles
     this._initParticles();
@@ -185,16 +190,6 @@ class GlitterLayer {
   draw() {
     if (!this.isActive || !this.tile) return;
     
-    // Debug logging (only every 120 frames ~2 seconds)
-    if (!this._drawCount) this._drawCount = 0;
-    this._drawCount++;
-    if (this._drawCount === 1) {
-      console.log('[GlitterLayer] First draw() call - canvas size:', this.canvas.width, 'x', this.canvas.height);
-    }
-    if (this._drawCount % 120 === 0) {
-      console.log('[GlitterLayer] Still drawing... frame', this._drawCount);
-    }
-    
     const w = this.canvas.width;
     const h = this.canvas.height;
     const ctx = this.ctx;
@@ -204,6 +199,15 @@ class GlitterLayer {
     if (this._lastDPR !== dpr) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       this._lastDPR = dpr;
+    }
+    
+    // Update cached colors if theme changed
+    const currentPalette = window.THEME?.currentPalette;
+    if (currentPalette !== this._lastThemePalette) {
+      this._lastThemePalette = currentPalette;
+      const colors = window.THEME?.colors || {};
+      this.cachedAccentA = colors.accentA || '#FF4FD8';
+      this.cachedAccentB = colors.accentB || '#D4A5FF';
     }
     
     // Work with logical pixels (CSS pixels) after DPI scaling
@@ -230,7 +234,7 @@ class GlitterLayer {
       }
     }
     
-    // Draw pulsing twinkle particles
+    // Draw pulsing twinkle particles (no shadow blur for performance)
     for (let i = 0; i < this.particleCount; i++) {
       const idx = i * 5;
       const px = this.particles[idx + 0] * logicalW;
@@ -245,29 +249,20 @@ class GlitterLayer {
       const size = baseSize * (1 + pulse * 0.5);
       
       if (alpha > 0.005) {
-        // Get theme colors
-        const theme = window.THEME || {};
-        const colors = theme.colors || {};
-        const accentA = colors.accentA || '#FF4FD8';
-        const accentB = colors.accentB || '#D4A5FF';
-        
-        // Draw sparkle with glow
+        // Draw sparkle without expensive shadow blur
         ctx.globalAlpha = alpha;
         
-        // Outer glow
-        ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+        // Outer core with theme color
+        ctx.fillStyle = i % 3 === 0 ? this.cachedAccentA : (i % 3 === 1 ? this.cachedAccentB : '#FFF');
         ctx.beginPath();
         ctx.arc(px, py, size, 0, Math.PI * 2);
         ctx.fill();
         
-        // Inner bright core - use theme colors
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = alpha * 1.5;
-        ctx.fillStyle = i % 3 === 0 ? accentA : (i % 3 === 1 ? accentB : '#FFF');
+        // Optional: tiny bright center for better visibility
+        ctx.globalAlpha = alpha * 1.8;
+        ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(px, py, size * 0.5, 0, Math.PI * 2);
+        ctx.arc(px, py, size * 0.3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -275,7 +270,6 @@ class GlitterLayer {
     // Reset
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
-    ctx.shadowBlur = 0;
   }
   
   /**
