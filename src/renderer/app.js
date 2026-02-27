@@ -1695,6 +1695,9 @@
         const startSample = startIdx + x * samplesPerPixel;
         const endSample = Math.min(startSample + samplesPerPixel, data.length);
         
+        // Skip if we've run out of data
+        if(startSample >= data.length) break;
+        
         let min = Infinity;
         let max = -Infinity;
         
@@ -1703,6 +1706,9 @@
           if(v < min) min = v;
           if(v > max) max = v;
         }
+        
+        // Skip drawing if no samples were found in this range
+        if(min === Infinity || max === -Infinity) continue;
         
         const yMin = rect.y + (0.5 - min * 0.45) * rect.h;
         const yMax = rect.y + (0.5 - max * 0.45) * rect.h;
