@@ -1942,6 +1942,10 @@
   let specBandState = null;
   let specColumnSmooth = null;
   let specFloatBins = null;
+  let specColumnMapCache = null;
+  let specOctaveSmoothed = null;
+  let specAvgSpectrum = null;
+  let specLiveSpectrum = null;
   const SPEC_EMA_ALPHA = 0.28;        // EMA smoothing (0.25-0.35 recommended)
   const SPEC_TILT_DB_OCT = 1.5;       // 1.5 dB/octave tilt (0 to disable)
   const SPEC_TILT_REF_HZ = 1000;      // Reference frequency for tilt
@@ -1950,6 +1954,72 @@
   const SPEC_X_WARP = 1.2;            // >1 compresses low-frequency spacing on X axis
   const SPEC_DB_MIN = -90;
   const SPEC_DB_MAX = -12;
+  const SPEC_DISPLAY_MIN_HZ = 60;
+  const SPEC_SMOOTH_OCTAVE_WIDTH = 1 / 6;
+  const SPEC_AVG_ALPHA = 0.08;
+  const SPEC_VIEW_MODE = 'avg'; // 'live' | 'avg'
+
+  function buildSpecColumnMap(plotW, sampleRateHz, fMinDisplay, fMaxDisplay, binCount) {
+    const safeW = Math.max(1, plotW);
+    const safeMin = Math.max(1, fMinDisplay);
+    const safeMax = Math.max(safeMin + 1, fMaxDisplay);
+    const fftSize = binCount * 2;
+
+    const xToFreq = (x) => {
+      if (safeW <= 1) return safeMin;
+      const ratio = Math.max(0, Math.min(1, x / (safeW - 1)));
+      return safeMin * Math.pow(safeMax / safeMin, ratio);
+    };
+
+    const centerFreq = new Float32Array(safeW);
+    const binStart = new Int32Array(safeW);
+    const binEnd = new Int32Array(safeW);
+    const smoothStart = new Int32Array(safeW);
+    const smoothEnd = new Int32Array(safeW);
+
+    for (let x = 0; x < safeW; x++) {
+      const f0 = xToFreq(x);
+      const f1 = xToFreq(Math.min(safeW - 1, x + 1));
+      const fi = Math.sqrt(f0 * f1);
+      centerFreq[x] = fi;
+
+      let i0 = Math.floor((f0 * fftSize) / sampleRateHz);
+      let i1 = Math.ceil((f1 * fftSize) / sampleRateHz);
+      i0 = Math.max(0, Math.min(binCount - 1, i0));
+      i1 = Math.max(0, Math.min(binCount - 1, i1));
+      if (i1 < i0) i1 = i0;
+      if (i1 < i0 + 1 && i0 < binCount - 1) i1 = i0 + 1;
+      binStart[x] = i0;
+      binEnd[x] = i1;
+    }
+
+    const halfWidth = SPEC_SMOOTH_OCTAVE_WIDTH * 0.5;
+    for (let i = 0; i < safeW; i++) {
+      const fi = centerFreq[i];
+      const lowF = fi * Math.pow(2, -halfWidth);
+      const highF = fi * Math.pow(2, halfWidth);
+
+      let s = i;
+      while (s > 0 && centerFreq[s - 1] >= lowF) s--;
+      let e = i;
+      while (e < safeW - 1 && centerFreq[e + 1] <= highF) e++;
+      smoothStart[i] = s;
+      smoothEnd[i] = e;
+    }
+
+    return {
+      plotW: safeW,
+      sampleRateHz,
+      fMinDisplay: safeMin,
+      fMaxDisplay: safeMax,
+      binCount,
+      centerFreq,
+      binStart,
+      binEnd,
+      smoothStart,
+      smoothEnd
+    };
+  }
   
   /**
    * Generate log-spaced band edges (1/octave subdivision)
@@ -2066,8 +2136,9 @@
     const colors = THEME.colors;
     const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     const plotW = Math.max(1, Math.floor(w));
-    const minHz = 20;
-    const nyquist = (sampleRate || 48000) / 2;
+    const sr = sampleRate || 48000;
+    const nyquist = sr / 2;
+    const minHz = SPEC_DISPLAY_MIN_HZ;
     const maxHz = Math.min(20000, nyquist);
     
     // dB scale parameters
@@ -2090,10 +2161,33 @@
       specFloatBins.fill(dbMin);
     }
     
-    // EMA smoothing buffer per x-column (after aggregation)
+    // EMA smoothing buffers
     if (!specColumnSmooth || specColumnSmooth.length !== plotW) {
       specColumnSmooth = new Float32Array(plotW);
       specColumnSmooth.fill(dbMin);
+    }
+    if (!specOctaveSmoothed || specOctaveSmoothed.length !== plotW) {
+      specOctaveSmoothed = new Float32Array(plotW);
+      specOctaveSmoothed.fill(dbMin);
+    }
+    if (!specLiveSpectrum || specLiveSpectrum.length !== plotW) {
+      specLiveSpectrum = new Float32Array(plotW);
+      specLiveSpectrum.fill(dbMin);
+    }
+    if (!specAvgSpectrum || specAvgSpectrum.length !== plotW) {
+      specAvgSpectrum = new Float32Array(plotW);
+      specAvgSpectrum.fill(dbMin);
+    }
+
+    if (
+      !specColumnMapCache ||
+      specColumnMapCache.plotW !== plotW ||
+      specColumnMapCache.sampleRateHz !== sr ||
+      specColumnMapCache.fMinDisplay !== minHz ||
+      specColumnMapCache.fMaxDisplay !== maxHz ||
+      specColumnMapCache.binCount !== specFloatBins.length
+    ) {
+      specColumnMapCache = buildSpecColumnMap(plotW, sr, minHz, maxHz, specFloatBins.length);
     }
     
     const logMin = Math.log10(minHz);
@@ -2158,21 +2252,10 @@
     
     // --- DRAW SPECTRUM BARS (PER-PIXEL LOG COLUMNS, NO GAPS) ---
     const fftSize = analyser && analyser.fftSize ? analyser.fftSize : (specFloatBins.length * 2);
-    const sr = sampleRate || 48000;
-    
+
     for (let x = 0; x < plotW; x++) {
-      const f0 = xToFreq(x);
-      const f1 = xToFreq(Math.min(plotW - 1, x + 1));
-      let i0 = Math.floor((f0 * fftSize) / sr);
-      let i1 = Math.ceil((f1 * fftSize) / sr);
-      i0 = clamp(i0, 0, specFloatBins.length - 1);
-      i1 = clamp(i1, 0, specFloatBins.length - 1);
-      if (i1 < i0) {
-        i1 = i0;
-      }
-      if (i1 < i0 + 1 && i0 < specFloatBins.length - 1) {
-        i1 = i0 + 1;
-      }
+      const i0 = specColumnMapCache.binStart[x];
+      const i1 = specColumnMapCache.binEnd[x];
       
       // Aggregate by MAX dB for readability
       let dbCol = -Infinity;
@@ -2187,18 +2270,38 @@
       }
       
       // Apply tilt in dB domain (keep negative values)
-      const fCenter = Math.sqrt(f0 * f1);
+      const fCenter = specColumnMapCache.centerFreq[x];
       const octaveOffset = Math.log2(Math.max(1, fCenter) / SPEC_TILT_REF_HZ);
       const dbTilted = dbCol + (SPEC_TILT_DB_OCT * octaveOffset);
       const dbClamped = clamp(dbTilted, dbMin, dbMax);
-      
-      // EMA smoothing AFTER aggregation
-      const prev = specColumnSmooth[x];
-      const smoothDb = prev + SPEC_EMA_ALPHA * (dbClamped - prev);
-      specColumnSmooth[x] = smoothDb;
-      
-      // Correct dB->height mapping (silence at bottom)
-      const norm = clamp01((smoothDb - dbMin) / dbRange);
+
+      specColumnSmooth[x] = dbClamped;
+    }
+
+    // 1/6th-octave smoothing pass in log-frequency domain
+    for (let x = 0; x < plotW; x++) {
+      const s = specColumnMapCache.smoothStart[x];
+      const e = specColumnMapCache.smoothEnd[x];
+      let sum = 0;
+      let count = 0;
+      for (let j = s; j <= e; j++) {
+        sum += specColumnSmooth[j];
+        count++;
+      }
+      const dbSmoothed = count > 0 ? (sum / count) : dbMin;
+      specOctaveSmoothed[x] = Number.isFinite(dbSmoothed) ? dbSmoothed : dbMin;
+    }
+
+    // Time-domain smoothing: live EMA + slow average curve EMA
+    for (let x = 0; x < plotW; x++) {
+      const target = specOctaveSmoothed[x];
+      specLiveSpectrum[x] = specLiveSpectrum[x] + SPEC_EMA_ALPHA * (target - specLiveSpectrum[x]);
+      specAvgSpectrum[x] = specAvgSpectrum[x] + SPEC_AVG_ALPHA * (specLiveSpectrum[x] - specAvgSpectrum[x]);
+    }
+
+    for (let x = 0; x < plotW; x++) {
+      const drawDb = SPEC_VIEW_MODE === 'live' ? specLiveSpectrum[x] : specAvgSpectrum[x];
+      const norm = clamp01((drawDb - dbMin) / dbRange);
       const barH = norm * graphH;
       const y = graphH - barH;
       
@@ -2216,8 +2319,8 @@
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
-    // Major tick labels: 100, 500, 1k, 2k, 5k, 10k, 15k, 20k
-    const majorTicks = [100, 500, 1000, 2000, 5000, 10000, 15000, 20000];
+    // Major tick labels: de-emphasized sub range for EQ-shape view
+    const majorTicks = [60, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000];
     for (let freq of majorTicks) {
       if (freq > maxHz) continue;
       const xNorm = hzToXNorm(freq);
