@@ -495,10 +495,12 @@ class SpectrumPanel extends Panel {
     this.labelX = new Float32Array(11);
     this.binCount = 256;
     this.sampleRate = 48000;
+    this.fftSize = 2048;
     this.minDb = -90;
     this.maxDb = -10;
-    this.minFreq = 20;
-    this.freqLabels = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    this.minHz = 20;
+    // Tick marks: 100, 500, 1k, 2k, 5k, 10k, 15k, 20k (clamped to Nyquist)
+    this.tickFreqs = [100, 500, 1000, 2000, 5000, 10000, 15000, 20000];
     this.hoverFreq = null;
     this.hoverDb = null;
     this.hoverX = null;
@@ -568,18 +570,17 @@ class SpectrumPanel extends Panel {
   _drawGrid(ctx, x, y, w, h, axisH) {
     const { colors, fonts } = THEME;
     const nyquist = this.sampleRate / 2;
-    const logMin = Math.log10(this.minFreq);
-    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
+    const maxHz = Math.min(20000, nyquist);
 
     ctx.strokeStyle = colors.gridLight;
     ctx.lineWidth = 1;
 
-    // Vertical log-frequency grid lines
-    for (let i = 0; i < this.freqLabels.length; i++) {
-      const freq = this.freqLabels[i];
-      if (freq > nyquist) continue;
-      const fx = (Math.log10(freq) - logMin) / logRange;
-      const xPos = x + fx * w;
+    // Vertical log-frequency grid lines at tick marks
+    for (let i = 0; i < this.tickFreqs.length; i++) {
+      const freq = this.tickFreqs[i];
+      if (freq > maxHz) continue;
+      const xNorm = this._hzToXLog(freq);
+      const xPos = x + xNorm * w;
       ctx.globalAlpha = 0.25;
       ctx.beginPath();
       ctx.moveTo(xPos, y);
@@ -588,17 +589,17 @@ class SpectrumPanel extends Panel {
     }
     ctx.globalAlpha = 1;
 
-    // Frequency axis labels at bottom
+    // Frequency axis labels at bottom (22px axis strip)
     ctx.fillStyle = colors.textPrimary;
     ctx.font = fonts.monoSmall;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    for (let i = 0; i < this.freqLabels.length; i++) {
-      const freq = this.freqLabels[i];
-      if (freq > nyquist) continue;
-      const fx = (Math.log10(freq) - logMin) / logRange;
-      const xPos = x + fx * w;
-      const label = freq >= 1000 ? (freq / 1000).toFixed(0) + 'k' : String(freq);
+    for (let i = 0; i < this.tickFreqs.length; i++) {
+      const freq = this.tickFreqs[i];
+      if (freq > maxHz) continue;
+      const xNorm = this._hzToXLog(freq);
+      const xPos = x + xNorm * w;
+      const label = this._formatHz(freq);
       ctx.fillText(label, xPos, y + h + 3);
     }
     ctx.globalAlpha = 1;
@@ -714,20 +715,45 @@ class SpectrumPanel extends Panel {
     return db;
   }
 
+  // Helper: format frequency value for display
+  _formatHz(freq) {
+    if (freq >= 1000) return (freq / 1000).toFixed(0) + 'k';
+    return String(Math.round(freq));
+  }
+
+  // Helper: convert Hz to normalized x position (0-1) using log scale
+  _hzToXLog(freq) {
+    const nyquist = this.sampleRate / 2;
+    const maxHz = Math.min(20000, nyquist);
+    if (freq <= this.minHz) return 0;
+    if (freq >= maxHz) return 1;
+    const logMin = Math.log10(this.minHz);
+    const logMax = Math.log10(maxHz);
+    const logFreq = Math.log10(freq);
+    return (logFreq - logMin) / (logMax - logMin);
+  }
+
   _rebuildLogMap() {
     const nyquist = this.sampleRate / 2;
-    const logMin = Math.log10(this.minFreq);
-    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
+    const maxHz = Math.min(20000, nyquist);
+    const logMin = Math.log10(this.minHz);
+    const logMax = Math.log10(maxHz);
     const bins = this.binCount;
+    
+    // Calculate bin center frequencies: freq = binIndex * (sampleRate / fftSize)
     for (let i = 0; i < bins; i++) {
-      const freq = Math.max(this.minFreq, (i / Math.max(1, bins - 1)) * nyquist);
-      const fx = (Math.log10(freq) - logMin) / logRange;
-      this.logX[i] = Math.max(0, Math.min(1, fx));
+      const freq = i * (this.sampleRate / this.fftSize);
+      const normalized = this._hzToXLog(freq);
+      this.logX[i] = Math.max(0, Math.min(1, normalized));
     }
   }
 
-  updateData(freqData, sampleRate) {
+  updateData(freqData, sampleRate, fftSize) {
     if (sampleRate) this.sampleRate = sampleRate;
+    if (fftSize) {
+      this.fftSize = fftSize;
+      this._rebuildLogMap();
+    }
     if (!freqData) return;
 
     if (freqData.length !== this.binCount) {
@@ -756,10 +782,14 @@ class SpectrumPanel extends Panel {
 
   setHoverPos(freqBin, dbValue) {
     const nyquist = this.sampleRate / 2;
+    const maxHz = Math.min(20000, nyquist);
+    
     if (Number.isInteger(freqBin)) {
-      this.hoverFreq = (freqBin / Math.max(1, this.binCount - 1)) * nyquist;
+      // freqBin is an index: convert to Hz using fftSize
+      this.hoverFreq = (freqBin * this.sampleRate / this.fftSize);
     } else {
-      this.hoverFreq = Math.max(this.minFreq, Math.min(nyquist, freqBin || this.minFreq));
+      // freqBin is already a frequency in Hz
+      this.hoverFreq = Math.max(this.minHz, Math.min(maxHz, freqBin || this.minHz));
     }
 
     if (dbValue > 0) {
@@ -768,10 +798,8 @@ class SpectrumPanel extends Panel {
       this.hoverDb = dbValue;
     }
 
-    const logMin = Math.log10(this.minFreq);
-    const logRange = Math.log10(Math.max(this.minFreq, nyquist)) - logMin;
-    const fx = (Math.log10(this.hoverFreq) - logMin) / logRange;
-    this.hoverX = this.x + THEME.spacing.md + Math.max(0, Math.min(1, fx)) * (this.width - THEME.spacing.md * 2);
+    const xNorm = this._hzToXLog(this.hoverFreq);
+    this.hoverX = this.x + THEME.spacing.md + xNorm * (this.width - THEME.spacing.md * 2);
   }
 }
 

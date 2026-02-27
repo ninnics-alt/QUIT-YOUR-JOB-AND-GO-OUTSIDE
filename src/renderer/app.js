@@ -1931,85 +1931,264 @@
     }
   }
 
+  // ============================================================================
+  // SPECTRUM ANALYZER: Log-Frequency Band Aggregation, Smoothing, Tilt
+  // ============================================================================
+  
+  // State: band edges, smoothing buffers, and analyzer parameters
+  let specBandState = null;
+  const SPEC_EMA_ALPHA = 0.28;        // EMA smoothing (0.25-0.35 recommended)
+  const SPEC_TILT_DB_OCT = 3.0;       // 3 dB/octave tilt (0 to disable)
+  const SPEC_TILT_REF_HZ = 1000;      // Reference frequency for tilt
+  const SPEC_BANDS_PER_OCTAVE = 12;   // 1/12 octave bands
+  
+  /**
+   * Generate log-spaced band edges (1/octave subdivision)
+   * @param {number} minHz - Start frequency (Hz)
+   * @param {number} maxHz - End frequency (Hz)
+   * @param {number} bandsPerOctave - Resolution (12 = 1/12 octave)
+   * @returns {Array} Band objects: [{freqHz, edgeLo, edgeHi, bandIdx}]
+   */
+  function generateLogBands(minHz, maxHz, bandsPerOctave) {
+    const bands = [];
+    const logMin = Math.log2(minHz);
+    const logMax = Math.log2(maxHz);
+    const logStep = 1 / bandsPerOctave;
+    
+    let bandIdx = 0;
+    for (let logFreq = logMin; logFreq < logMax; logFreq += logStep) {
+      const freq = Math.pow(2, logFreq);
+      const loFreq = Math.pow(2, logFreq - logStep / 2);
+      const hiFreq = Math.pow(2, logFreq + logStep / 2);
+      bands.push({
+        freqHz: freq,
+        edgeLo: loFreq,
+        edgeHi: hiFreq,
+        bandIdx: bandIdx++
+      });
+    }
+    return bands;
+  }
+  
+  /**
+   * Initialize spectrum analyzer state (once at startup)
+   */
+  function initSpecBandState() {
+    const nyquist = (sampleRate || 48000) / 2;
+    const maxHz = Math.min(20000, nyquist);
+    const bands = generateLogBands(20, maxHz, SPEC_BANDS_PER_OCTAVE);
+    
+    specBandState = {
+      bands: bands,
+      smoothed: new Float32Array(bands.length),  // EMA-smoothed output (dB)
+      nyquist: nyquist,
+      maxHz: maxHz,
+      fftSize: 2048,
+      sampleRate: sampleRate || 48000,
+      initialized: true
+    };
+    
+    return specBandState;
+  }
+  
+  /**
+   * Aggregate FFT bins into log-spaced bands and apply smoothing
+   */
+  function aggregateSpectrumBands(freqDataU8) {
+    if (!specBandState || !specBandState.initialized) {
+      initSpecBandState();
+    }
+    
+    const state = specBandState;
+    const bins = freqDataU8.length;
+    const nyquist = state.nyquist;
+    const fftSize = state.fftSize;
+    const sampleRate = state.sampleRate;
+    
+    // Convert byte frequency data (0-255) to dB scale
+    // 255 = 0 dB (ref), each step ≈ 0.24 dB
+    const freqDataDb = new Float32Array(bins);
+    for (let i = 0; i < bins; i++) {
+      const byte = freqDataU8[i];
+      freqDataDb[i] = (byte / 255) * -96 + 0; // Map [0,255] → [-96, 0] dB
+    }
+    
+    // Aggregate bins into bands
+    const bandValues = new Float32Array(state.bands.length);
+    for (let bIdx = 0; bIdx < state.bands.length; bIdx++) {
+      const band = state.bands[bIdx];
+      const edgeLo = band.edgeLo;
+      const edgeHi = band.edgeHi;
+      
+      let sum = 0, count = 0;
+      for (let binIdx = 0; binIdx < bins; binIdx++) {
+        const binFreq = (binIdx + 0.5) * sampleRate / fftSize;
+        if (binFreq >= edgeLo && binFreq < edgeHi) {
+          // Convert dB to linear, accumulate, convert back
+          const linear = Math.pow(10, freqDataDb[binIdx] / 20);
+          sum += linear * linear; // Power
+          count++;
+        }
+      }
+      
+      // RMS of band, back to dB
+      if (count > 0) {
+        const rms = Math.sqrt(sum / count);
+        bandValues[bIdx] = rms > 0 ? 20 * Math.log10(rms) : -96;
+      } else {
+        bandValues[bIdx] = -96;
+      }
+    }
+    
+    // Apply EMA smoothing per band
+    for (let bIdx = 0; bIdx < state.bands.length; bIdx++) {
+      const smoothed = state.smoothed[bIdx];
+      const current = bandValues[bIdx];
+      state.smoothed[bIdx] = smoothed + SPEC_EMA_ALPHA * (current - smoothed);
+    }
+    
+    return state;
+  }
+  
   function drawSpecGraph(freq){
     const w = specGraphCanvas.clientWidth, h = specGraphCanvas.clientHeight;
-    const axisH = 18; // Reserve space for frequency axis at bottom
-    const graphH = h - axisH; // Height for the actual graph
+    const axisH = 24; // Reserve space for frequency axis at bottom
+    const graphH = h - axisH;
     const colors = THEME.colors;
     const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     
-    // Clear background
+    // Aggregate FFT into log bands with smoothing
+    const state = aggregateSpectrumBands(freq);
+    const bands = state.bands;
+    const smoothedDb = state.smoothed;
+    const minHz = 20;
+    const maxHz = state.maxHz;
+    
+    const logMin = Math.log10(minHz);
+    const logMax = Math.log10(maxHz);
+    
+    const hzToXNorm = (hz) => {
+      if (hz <= minHz) return 0;
+      if (hz >= maxHz) return 1;
+      return (Math.log10(hz) - logMin) / (logMax - logMin);
+    };
+    
+    const dbToYNorm = (db) => {
+      // Map dB range [-60, 0] to [1, 0] (inverted: low dB at top)
+      const dbRange = 60;
+      const normalized = Math.max(0, Math.min(1, (db + 60) / dbRange));
+      return 1 - normalized; // Invert
+    };
+    
+    // --- CLEAR BACKGROUND ---
     specGraphCtx.fillStyle = colors.bgInset;
-    specGraphCtx.fillRect(0,0,w,h);
-
-    // Glyph underlay (minimal alpha for spectrograph so data remains visible)
+    specGraphCtx.fillRect(0, 0, w, h);
+    
+    // Glyph underlay (minimal alpha)
     if (typeof DoomGlyphs !== 'undefined') {
       DoomGlyphs.drawUnderlay(specGraphCtx, 0, 0, w, graphH, t, 0.06);
     }
     
-    // Draw gridlines and dB markers (y-axis)
+    // --- DRAW dB GRID (Y-AXIS) ---
     const [gr, gg, gb] = UIHelpers._parseRGB(colors.grid);
-    specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.3)`;
-    const [tr, tg, tb] = UIHelpers._parseRGB(colors.textMuted);
-    specGraphCtx.fillStyle = `rgba(${tr},${tg},${tb},0.8)`;
-    specGraphCtx.font = '11px monospace';
-    specGraphCtx.textAlign = 'right';
-    specGraphCtx.textBaseline = 'middle';
+    const dbGridValues = [-12, -18, -24, -30, -36, -42, -48, -54, -60];
     
-    // dB markers: -60, -40, -20, 0
-    const dbMarkers = [-60, -40, -20, 0];
-    for(let db of dbMarkers) {
-      const yPos = graphH - ((db + 60) / 60) * graphH; // map -60..0 dB to y range
+    specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.25)`;
+    specGraphCtx.lineWidth = 1;
+    
+    // Light grid lines
+    for (let db of dbGridValues) {
+      const yNorm = dbToYNorm(db);
+      const yPos = yNorm * graphH;
       specGraphCtx.beginPath();
       specGraphCtx.moveTo(0, yPos);
       specGraphCtx.lineTo(w, yPos);
       specGraphCtx.stroke();
-      specGraphCtx.fillText(db + 'dB', w - 5, yPos);
     }
     
-    // Draw frequency bins as bars
-    const bins = freq.length;
-    const step = Math.max(1, Math.floor(bins / 100));
-    const barW = w / (bins/step);
+    // dB labels on right
+    const [tr, tg, tb] = UIHelpers._parseRGB(colors.textMuted);
+    specGraphCtx.fillStyle = `rgba(${tr},${tg},${tb},0.7)`;
+    specGraphCtx.font = '9px monospace';
+    specGraphCtx.textAlign = 'right';
+    specGraphCtx.textBaseline = 'middle';
     
-    for(let i=0,bi=0;i<bins;i+=step,bi++){
-      const v = freq[i]/255;
-      const bw = barW-1;
-      const bh = v * graphH; // Use graphH instead of h
-      const x = bi*barW;
-      const y = graphH - bh; // Position relative to graphH
+    for (let db of dbGridValues) {
+      const yNorm = dbToYNorm(db);
+      const yPos = yNorm * graphH;
+      specGraphCtx.fillText(db + 'dB', w - 3, yPos);
+    }
+    
+    // --- DRAW SPECTRUM BARS (AGGREGATED BANDS) ---
+    const barGap = 1; // pixels between bars
+    const barsPerScreen = bands.length;
+    const totalBarWidth = barsPerScreen > 0 ? w / barsPerScreen : 1;
+    const barW = Math.max(0.5, totalBarWidth - barGap);
+    
+    for (let bIdx = 0; bIdx < bands.length; bIdx++) {
+      const band = bands[bIdx];
+      const dbVal = smoothedDb[bIdx];
       
-      specGraphCtx.fillStyle = colorForValue(v);
-      specGraphCtx.fillRect(x, y, bw, bh);
+      // Apply tilt compensation: more bass boost, less treble
+      const octaveOffset = Math.log2(band.freqHz / SPEC_TILT_REF_HZ);
+      const tiltDb = SPEC_TILT_DB_OCT * octaveOffset;
+      const displayDb = dbVal - tiltDb;
+      
+      // Map to pixel height
+      const yNorm = dbToYNorm(displayDb);
+      const barH = yNorm * graphH;
+      const barY = graphH - barH;
+      const barX = (bIdx / barsPerScreen) * w;
+      
+      // Color based on magnitude
+      const magnitude = Math.max(0, Math.min(1, (displayDb + 60) / 60));
+      specGraphCtx.fillStyle = colorForValue(magnitude);
+      specGraphCtx.fillRect(barX, barY, barW, barH);
+      
+      // Optional subtle gradient overlay on top of bar
+      const gradient = specGraphCtx.createLinearGradient(barX, barY, barX, barY + barH);
+      gradient.addColorStop(0, `rgba(255,255,255,0.08)`);
+      gradient.addColorStop(1, `rgba(0,0,0,0.15)`);
+      specGraphCtx.fillStyle = gradient;
+      specGraphCtx.fillRect(barX, barY, barW, barH);
     }
     
-    // Draw frequency labels on x-axis (in the reserved space at bottom)
+    // --- DRAW FREQUENCY AXIS (X-AXIS) ---
     const [lbr, lbg, lbb] = UIHelpers._parseRGB(colors.text);
     specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
     specGraphCtx.font = 'bold 11px monospace';
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
-    // Calculate Nyquist frequency (half of sample rate)
-    const nyquist = (sampleRate || 48000) / 2;
-    
-    // Frequency labels: show 100Hz, 1kHz, 5kHz, 10kHz, 20kHz range
-    const freqLabels = [100, 500, 1000, 2000, 5000, 10000, 15000, 20000];
-    for(let freq of freqLabels) {
-      if(freq > nyquist) break;
-      const binIdx = Math.floor((freq / nyquist) * bins);
-      const xPos = (binIdx / step) * barW;
-      const label = freq >= 1000 ? (freq/1000).toFixed(0) + 'k' : freq;
-      specGraphCtx.fillText(label, xPos, graphH + 3); // Draw in the axis space below graph
+    // Major tick labels: 100, 500, 1k, 2k, 5k, 10k, 15k, 20k
+    const majorTicks = [100, 500, 1000, 2000, 5000, 10000, 15000, 20000];
+    for (let freq of majorTicks) {
+      if (freq > maxHz) continue;
+      const xNorm = hzToXNorm(freq);
+      const xPos = xNorm * w;
+      const label = freq >= 1000 ? (freq / 1000).toFixed(0) + 'k' : String(freq);
+      specGraphCtx.fillText(label, xPos, graphH + 5);
     }
     
-    // Draw title
-    const [titr, titg, titb] = UIHelpers._parseRGB(colors.text);
-    specGraphCtx.fillStyle = `rgba(${titr},${titg},${titb},0.9)`;
-    specGraphCtx.font = 'bold 13px sans-serif';
+    // Draw subtle vertical tick lines at major frequencies
+    specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.15)`;
+    specGraphCtx.lineWidth = 0.5;
+    for (let freq of majorTicks) {
+      if (freq > maxHz) continue;
+      const xNorm = hzToXNorm(freq);
+      const xPos = xNorm * w;
+      specGraphCtx.beginPath();
+      specGraphCtx.moveTo(xPos, graphH);
+      specGraphCtx.lineTo(xPos, graphH - 3);
+      specGraphCtx.stroke();
+    }
+    
+    // --- DRAW TITLE ---
+    specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
+    specGraphCtx.font = 'bold 12px sans-serif';
     specGraphCtx.textAlign = 'left';
     specGraphCtx.textBaseline = 'top';
-    specGraphCtx.fillText('Frequency Response (0 - ' + (nyquist/1000).toFixed(0) + 'kHz)', 5, 3);
+    specGraphCtx.fillText('Spectrum (log 20Hz–20kHz, EMA 0.28, +3dB/oct tilt)', 4, 2);
     
     // Apply theme overlays (scanlines, noise, glitter)
     if (window.CanvasOverlays) {
@@ -2018,7 +2197,7 @@
       window.CanvasOverlays.applyThemeOverlays(specGraphCtx, w, h, detailNum, time);
     }
     
-    // DOOM reactive effects (shockwave + border flare)
+    // DOOM reactive effects
     if (window.THEME && window.THEME.currentPalette === 'doom' && window.DOOM_FX) {
       window.DOOM_FX.drawShockwave(specGraphCtx, w, h);
       window.DOOM_FX.drawBorderFlare(specGraphCtx, w, h, 0);
