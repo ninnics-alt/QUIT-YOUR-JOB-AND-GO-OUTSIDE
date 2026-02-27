@@ -273,7 +273,9 @@ class OscilloscopePanel extends Panel {
     this._decimateWindow(windowL, windowR, this.width);
 
     // === STEP 5: Draw trace on persistence buffer (soft) ===
-    this._drawTraceOnPersistence(this.decimated, colors.accentGreen, 0.7, false);
+    // Nuclear theme uses accentA (green) for oscilloscope trace instead of accentB
+    const oscColor = THEME.currentPalette === 'nuclear' ? colors.accentA : colors.accentB;
+    this._drawTraceOnPersistence(this.decimated, oscColor, 0.7, false);
 
     // Compute stats
     this._computeStats(windowL, windowR);
@@ -396,7 +398,8 @@ class OscilloscopePanel extends Panel {
   _drawTraceCrisp(ctx, contentY, contentH, colors) {
     const centerY = contentY + contentH / 2;
 
-    ctx.strokeStyle = colors.accentGreen;
+    // Nuclear theme uses accentA (green) for oscilloscope trace instead of accentB
+    ctx.strokeStyle = THEME.currentPalette === 'nuclear' ? colors.accentA : colors.accentB;
     ctx.lineWidth = 2;
     ctx.beginPath();
 
@@ -842,7 +845,9 @@ class VectorScopePanel extends Panel {
 
     // Draw trail
     if (this.detailLevel === 'high') {
-      UIHelpers.drawTrail(parentCtx, this.trail, colors.accentGreen, 5);
+      // Nuclear theme uses accentA (green) for vectorscope trail instead of accentB
+      const vectorColor = THEME.currentPalette === 'nuclear' ? colors.accentA : colors.accentB;
+      UIHelpers.drawTrail(parentCtx, this.trail, vectorColor, 5);
     }
 
     // Draw current point
@@ -859,7 +864,7 @@ class VectorScopePanel extends Panel {
     const px = centerX + avgL * radius;
     const py = centerY - avgR * radius;
 
-    parentCtx.fillStyle = colors.accentGreen;
+    parentCtx.fillStyle = colors.accentBlue;
     parentCtx.beginPath();
     parentCtx.arc(px, py, 3, 0, Math.PI * 2);
     parentCtx.fill();

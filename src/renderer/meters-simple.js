@@ -114,7 +114,8 @@ class MeterDisplay {
       this.ctx.fillText(m.label, m.x + 6, m.y + 4);
       
       // Value - use theme meter value font
-      this.ctx.fillStyle = colors.accentB;
+      // Nuclear theme uses accentA (green) for meter values instead of accentB
+      this.ctx.fillStyle = THEME.currentPalette === 'nuclear' ? colors.accentA : colors.accentB;
       this.ctx.font = fonts.monoBoldLarge;  // Use theme's meter value font
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';

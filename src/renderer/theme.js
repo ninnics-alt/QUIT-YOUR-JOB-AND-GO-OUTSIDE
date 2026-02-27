@@ -105,9 +105,9 @@ const THEMES = {
     spectroPaletteName: 'neon',
     
     // Meter fonts - Arcade rounded
-    meterFontValue: 'Georgia, serif',
+    meterFontValue: 'Roboto Mono, monospace',
     meterFontLabel: 'ui-monospace, monospace',
-    meterFontTitle: 'Georgia, serif',
+    meterFontTitle: 'Roboto Mono, monospace',
   },
   
   doom: {
