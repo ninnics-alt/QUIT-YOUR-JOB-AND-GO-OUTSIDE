@@ -2134,11 +2134,6 @@
       const band = bands[bIdx];
       const dbVal = smoothedDb[bIdx];
       
-      // Skip bars below noise floor (suppress constant grey noise)
-      if (dbVal < SPEC_NOISE_FLOOR) {
-        continue;
-      }
-      
       // Apply tilt compensation: more bass boost, less treble
       const octaveOffset = Math.log2(band.freqHz / SPEC_TILT_REF_HZ);
       const tiltDb = SPEC_TILT_DB_OCT * octaveOffset;
@@ -2156,16 +2151,12 @@
       const barY = graphH - barH;
       const barX = (bIdx / barsPerScreen) * w;
       
-      // Color based on magnitude
-      const magnitude = Math.max(0, Math.min(1, (displayDb - dbMin) / dbRange));
-      specGraphCtx.fillStyle = colorForValue(magnitude);
-      specGraphCtx.fillRect(barX, barY, barW, barH);
-      
-      // Optional subtle gradient overlay on top of bar
-      const gradient = specGraphCtx.createLinearGradient(barX, barY, barX, barY + barH);
-      gradient.addColorStop(0, `rgba(255,255,255,0.08)`);
-      gradient.addColorStop(1, `rgba(0,0,0,0.15)`);
-      specGraphCtx.fillStyle = gradient;
+      // Unconditional HSL color per bar: green->cyan hue ramp, lightness modulated by dB
+      const N = bands.length;
+      const hue = 140 + 60 * (bIdx / Math.max(1, N - 1));
+      const t = Math.max(0, Math.min(1, (displayDb - dbMin) / dbRange));
+      const light = 20 + 45 * t;
+      specGraphCtx.fillStyle = `hsl(${hue} 95% ${light}%)`;
       specGraphCtx.fillRect(barX, barY, barW, barH);
     }
     
