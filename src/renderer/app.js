@@ -1685,13 +1685,15 @@
     
     drawMinMax(data, startIdx, color, ctx, rect) {
       ctx.strokeStyle = color;
-      // Make lines thicker for better visibility, especially at high DPI
+      // Don't scale lineWidth by dpr - context is already scaled by setTransform
       const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
-      const dpr = window.devicePixelRatio || 1;
-      ctx.lineWidth = isPS2 ? (2.0 * dpr) : (1.5 * dpr);
+      ctx.lineWidth = isPS2 ? 2.0 : 1.5;
       
       // Map sample indices to pixels - handle case where data.length > rect.w
       const sampleIndexRatio = Math.max(1, data.length / rect.w);
+      
+      // Ensure minimum line height of 2 pixels when min === max
+      const minPixelHeight = 2.0;
       
       for(let x = 0; x < rect.w; x++) {
         const startSample = startIdx + Math.floor(x * sampleIndexRatio);
@@ -1713,14 +1715,19 @@
         if(min === Infinity) min = 0;
         if(max === -Infinity) max = 0;
         
-        // Ensure min < max (swap if needed, add small epsilon if equal)
+        // Ensure min < max (swap if needed)
         if(min > max) [min, max] = [max, min];
-        if(min === max) {
-          max = min + 0.001; // Ensure at least 1px of line height
+        
+        let yMin = rect.y + (0.5 - min * 0.45) * rect.h;
+        let yMax = rect.y + (0.5 - max * 0.45) * rect.h;
+        
+        // Ensure minimum line height in pixels
+        if(Math.abs(yMax - yMin) < minPixelHeight) {
+          const center = (yMin + yMax) / 2;
+          yMin = center - minPixelHeight / 2;
+          yMax = center + minPixelHeight / 2;
         }
         
-        const yMin = rect.y + (0.5 - min * 0.45) * rect.h;
-        const yMax = rect.y + (0.5 - max * 0.45) * rect.h;
         const xPos = rect.x + x;
         
         ctx.beginPath();
