@@ -767,6 +767,82 @@ const UIHelpers = {
     }
     return [0, 229, 255]; // Default cyan
   },
+
+  /**
+   * Get spectrograph color based on current theme
+   * @param {number} positionNorm - Normalized horizontal position (0-1, left to right)
+   * @param {number} intensityNorm - Normalized intensity/level (0-1, silence to peak)
+   * @returns {string} HSL color string
+   */
+  getSpectroColor(positionNorm, intensityNorm) {
+    const paletteName = THEME.colors.spectroPaletteName || 'ps2';
+    
+    // Clamp inputs
+    const pos = Math.max(0, Math.min(1, positionNorm));
+    const intensity = Math.max(0, Math.min(1, intensityNorm));
+    
+    let hue, sat, light;
+    
+    switch (paletteName) {
+      case 'ps2':
+        // PlayStation blue to cyan
+        hue = 200 + 20 * pos;  // 200 (blue) to 220 (cyan)
+        sat = 85 + 10 * intensity;
+        light = 25 + 40 * intensity;
+        break;
+        
+      case 'neon':
+        // Cyan to magenta neon glow
+        hue = 180 + 120 * pos;  // 180 (cyan) to 300 (magenta)
+        sat = 100;
+        light = 30 + 45 * intensity;
+        break;
+        
+      case 'doom':
+        // Fire/hell - red to yellow
+        hue = 0 + 60 * pos;  // 0 (red) to 60 (yellow)
+        sat = 100;
+        light = 20 + 50 * intensity;
+        break;
+        
+      case 'cottoncandy':
+        // Sweet pastels - pink to blue
+        hue = 320 + 80 * pos;  // 320 (pink) to 400 (wraps to 40, blue-teal)
+        if (hue >= 360) hue -= 360;
+        sat = 80 + 15 * intensity;
+        light = 50 + 30 * intensity;
+        break;
+        
+      case 'nuclear':
+        // Radioactive - green to yellow
+        hue = 120 + 30 * pos;  // 120 (green) to 150 (yellow-green)
+        sat = 95 + 5 * intensity;
+        light = 25 + 50 * intensity;
+        break;
+        
+      case 'monochrome':
+        // Grayscale - no hue variation
+        hue = 0;
+        sat = 0;
+        light = 15 + 70 * intensity;
+        break;
+        
+      case 'glitter':
+        // Rainbow spectrum across frequency
+        hue = pos * 300;  // Full rainbow sweep
+        sat = 90 + 10 * intensity;
+        light = 40 + 40 * intensity;
+        break;
+        
+      default:
+        // Fallback to classic green-cyan
+        hue = 140 + 60 * pos;
+        sat = 95;
+        light = 20 + 45 * intensity;
+    }
+    
+    return `hsl(${Math.round(hue)} ${Math.round(sat)}% ${Math.round(light)}%)`;
+  },
 };
 
 // Export for use in app.js
