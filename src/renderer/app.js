@@ -1955,6 +1955,11 @@
   const SPEC_DB_MIN = -90;
   const SPEC_DB_MAX = -12;
   const SPEC_DISPLAY_MIN_HZ = 60;
+  const SPEC_DISPLAY_MAX_HZ = 30000;
+  const SPEC_HI_BAND_START_HZ = 20000;
+  const SPEC_HI_SHARE = 0.22;
+  const SPEC_LEFT_PAD = 2;
+  const SPEC_RIGHT_GUTTER = 48;
   const SPEC_SMOOTH_OCTAVE_WIDTH = 1 / 6;
   const SPEC_AVG_ALPHA = 0.08;
   const SPEC_VIEW_MODE = 'avg'; // 'live' | 'avg'
@@ -1963,12 +1968,21 @@
     const safeW = Math.max(1, plotW);
     const safeMin = Math.max(1, fMinDisplay);
     const safeMax = Math.max(safeMin + 1, fMaxDisplay);
+    const safeA = Math.max(safeMin + 1, Math.min(SPEC_HI_BAND_START_HZ, safeMax));
+    const hiShare = Math.max(0.18, Math.min(0.30, SPEC_HI_SHARE));
+    const loW = safeW * (1 - hiShare);
+    const hiW = Math.max(1, safeW * hiShare);
     const fftSize = binCount * 2;
 
     const xToFreq = (x) => {
       if (safeW <= 1) return safeMin;
-      const ratio = Math.max(0, Math.min(1, x / (safeW - 1)));
-      return safeMin * Math.pow(safeMax / safeMin, ratio);
+      const xClamped = Math.max(0, Math.min(safeW, x));
+      if (safeMax <= safeA || xClamped <= loW) {
+        const t = Math.max(0, Math.min(1, loW <= 0 ? 0 : (xClamped / Math.max(1e-6, loW))));
+        return Math.exp(Math.log(safeMin) + t * (Math.log(safeA) - Math.log(safeMin)));
+      }
+      const t = Math.max(0, Math.min(1, (xClamped - loW) / hiW));
+      return safeA + t * (safeMax - safeA);
     };
 
     const centerFreq = new Float32Array(safeW);
@@ -1979,8 +1993,8 @@
 
     for (let x = 0; x < safeW; x++) {
       const f0 = xToFreq(x);
-      const f1 = xToFreq(Math.min(safeW - 1, x + 1));
-      const fi = Math.sqrt(f0 * f1);
+      const f1 = xToFreq(Math.min(safeW, x + 1));
+      const fi = Math.sqrt(Math.max(1, f0) * Math.max(1, f1));
       centerFreq[x] = fi;
 
       let i0 = Math.floor((f0 * fftSize) / sampleRateHz);
@@ -2012,6 +2026,10 @@
       sampleRateHz,
       fMinDisplay: safeMin,
       fMaxDisplay: safeMax,
+      fABoundary: safeA,
+      hiShare,
+      loW,
+      hiW,
       binCount,
       centerFreq,
       binStart,
@@ -2135,11 +2153,19 @@
     const graphH = h - axisH;
     const colors = THEME.colors;
     const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
-    const plotW = Math.max(1, Math.floor(w));
+    const leftPad = SPEC_LEFT_PAD;
+    const rightGutter = SPEC_RIGHT_GUTTER;
+    const plotX0 = leftPad;
+    const plotX1 = Math.max(plotX0 + 1, w - rightGutter);
+    const plotW = Math.max(1, Math.floor(plotX1 - plotX0));
     const sr = sampleRate || 48000;
     const nyquist = sr / 2;
     const minHz = SPEC_DISPLAY_MIN_HZ;
-    const maxHz = Math.min(20000, nyquist);
+    const maxHz = SPEC_DISPLAY_MAX_HZ;
+    const fABoundary = SPEC_HI_BAND_START_HZ;
+    const hiShare = Math.max(0.18, Math.min(0.30, SPEC_HI_SHARE));
+    const loW = plotW * (1 - hiShare);
+    const hiW = Math.max(1, plotW * hiShare);
     
     // dB scale parameters
     const dbMin = SPEC_DB_MIN;
@@ -2190,19 +2216,25 @@
       specColumnMapCache = buildSpecColumnMap(plotW, sr, minHz, maxHz, specFloatBins.length);
     }
     
-    const logMin = Math.log10(minHz);
-    const logMax = Math.log10(maxHz);
-    
-    const hzToXNorm = (hz) => {
-      if (hz <= minHz) return 0;
-      if (hz >= maxHz) return 1;
-      return (Math.log10(hz) - logMin) / (logMax - logMin);
+    const freqToPlotX = (freq) => {
+      const f = clamp(freq, minHz, maxHz);
+      if (f <= fABoundary) {
+        const t = (Math.log(f) - Math.log(minHz)) / (Math.log(fABoundary) - Math.log(minHz));
+        return plotX0 + clamp01(t) * loW;
+      }
+      const t = (f - fABoundary) / (maxHz - fABoundary);
+      return plotX0 + loW + clamp01(t) * hiW;
     };
-    
-    const xToFreq = (x) => {
-      if (plotW <= 1) return minHz;
-      const ratio = x / (plotW - 1);
-      return minHz * Math.pow(maxHz / minHz, ratio);
+
+    const plotXToFreq = (x) => {
+      const xClamped = clamp(x, plotX0, plotX1);
+      const splitX = plotX0 + loW;
+      if (xClamped <= splitX) {
+        const t = clamp01((xClamped - plotX0) / Math.max(1e-6, loW));
+        return Math.exp(Math.log(minHz) + t * (Math.log(fABoundary) - Math.log(minHz)));
+      }
+      const t = clamp01((xClamped - splitX) / Math.max(1e-6, hiW));
+      return fABoundary + t * (maxHz - fABoundary);
     };
     
     const dbToYNorm = (db) => {
@@ -2227,19 +2259,27 @@
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.25)`;
     specGraphCtx.lineWidth = 1;
     
-    // Light grid lines
+    // Light grid lines (plot area only)
     for (let db of dbGridValues) {
       const yNorm = dbToYNorm(db);
       const yPos = yNorm * graphH;
       specGraphCtx.beginPath();
-      specGraphCtx.moveTo(0, yPos);
-      specGraphCtx.lineTo(w, yPos);
+      specGraphCtx.moveTo(plotX0, yPos);
+      specGraphCtx.lineTo(plotX1, yPos);
       specGraphCtx.stroke();
     }
-    
-    // dB labels on right
+
+    // Subtle label strip behind right gutter for readability
+    const gutterGradient = specGraphCtx.createLinearGradient(plotX1, 0, w, 0);
+    gutterGradient.addColorStop(0, `rgba(${gr},${gg},${gb},0.08)`);
+    gutterGradient.addColorStop(1, `rgba(${gr},${gg},${gb},0.20)`);
+    specGraphCtx.fillStyle = gutterGradient;
+    specGraphCtx.fillRect(plotX1, 0, Math.max(0, w - plotX1), graphH);
+
+    // dB labels on right gutter
     const [tr, tg, tb] = UIHelpers._parseRGB(colors.textMuted);
-    specGraphCtx.fillStyle = `rgba(${tr},${tg},${tb},0.7)`;
+    specGraphCtx.globalCompositeOperation = 'source-over';
+    specGraphCtx.fillStyle = `rgba(${tr},${tg},${tb},0.85)`;
     specGraphCtx.font = '9px monospace';
     specGraphCtx.textAlign = 'right';
     specGraphCtx.textBaseline = 'middle';
@@ -2247,7 +2287,7 @@
     for (let db of dbGridValues) {
       const yNorm = dbToYNorm(db);
       const yPos = yNorm * graphH;
-      specGraphCtx.fillText(db + 'dB', w - 3, yPos);
+      specGraphCtx.fillText(db + 'dB', w - 4, yPos);
     }
     
     // --- DRAW SPECTRUM BARS (PER-PIXEL LOG COLUMNS, NO GAPS) ---
@@ -2269,8 +2309,13 @@
         dbCol = dbMin;
       }
       
-      // Apply tilt in dB domain (keep negative values)
+      // Nyquist cap: no fake energy above Nyquist
       const fCenter = specColumnMapCache.centerFreq[x];
+      if (fCenter > nyquist) {
+        dbCol = dbMin;
+      }
+      
+      // Apply tilt in dB domain (keep negative values)
       const octaveOffset = Math.log2(Math.max(1, fCenter) / SPEC_TILT_REF_HZ);
       const dbTilted = dbCol + (SPEC_TILT_DB_OCT * octaveOffset);
       const dbClamped = clamp(dbTilted, dbMin, dbMax);
@@ -2304,12 +2349,13 @@
       const norm = clamp01((drawDb - dbMin) / dbRange);
       const barH = norm * graphH;
       const y = graphH - barH;
+      const xPix = plotX0 + x;
       
       // Keep existing color style (green->cyan with level-based lightness)
       const hue = 140 + 60 * (x / Math.max(1, plotW - 1));
       const light = 20 + 45 * norm;
       specGraphCtx.fillStyle = `hsl(${hue} 95% ${light}%)`;
-      specGraphCtx.fillRect(x, y, 1, barH);
+      specGraphCtx.fillRect(xPix, y, 1, barH);
     }
     
     // --- DRAW FREQUENCY AXIS (X-AXIS) ---
@@ -2319,23 +2365,21 @@
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
-    // Major tick labels: de-emphasized sub range for EQ-shape view
-    const majorTicks = [60, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000];
+    // Major tick labels
+    const majorTicks = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 25000, 30000];
     for (let freq of majorTicks) {
       if (freq > maxHz) continue;
-      const xNorm = hzToXNorm(freq);
-      const xPos = xNorm * w;
-      const label = freq >= 1000 ? (freq / 1000).toFixed(0) + 'k' : String(freq);
+      const xPos = freqToPlotX(freq);
+      const label = freq >= 1000 ? (freq % 1000 === 0 ? (freq / 1000).toFixed(0) + 'k' : (freq / 1000).toFixed(1) + 'k') : String(freq);
       specGraphCtx.fillText(label, xPos, graphH + 5);
     }
     
-    // Draw subtle vertical tick lines at major frequencies
+    // Draw subtle vertical tick lines at major frequencies (plot only)
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.15)`;
     specGraphCtx.lineWidth = 0.5;
     for (let freq of majorTicks) {
       if (freq > maxHz) continue;
-      const xNorm = hzToXNorm(freq);
-      const xPos = xNorm * w;
+      const xPos = freqToPlotX(freq);
       specGraphCtx.beginPath();
       specGraphCtx.moveTo(xPos, graphH);
       specGraphCtx.lineTo(xPos, graphH - 3);
@@ -2347,7 +2391,8 @@
     specGraphCtx.font = 'bold 12px sans-serif';
     specGraphCtx.textAlign = 'left';
     specGraphCtx.textBaseline = 'top';
-    specGraphCtx.fillText('Spectrum (log 20Hz–20kHz, EMA 0.28, 1.5dB/oct tilt)', 4, 2);
+    const nyqNote = nyquist < maxHz ? ' (Nyquist cap)' : '';
+    specGraphCtx.fillText(`Spectrum (60Hz–30kHz, EMA 0.28, 1.5dB/oct tilt${nyqNote})`, 4, 2);
     
     // Apply theme overlays (scanlines, noise, glitter)
     if (window.CanvasOverlays) {
