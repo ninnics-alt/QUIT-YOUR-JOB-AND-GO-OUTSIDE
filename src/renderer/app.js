@@ -1685,25 +1685,22 @@
     
     drawMinMax(data, startIdx, color, ctx, rect) {
       ctx.strokeStyle = color;
-      // Don't scale lineWidth by dpr - context is already scaled by setTransform
       const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
       ctx.lineWidth = isPS2 ? 2.0 : 1.5;
       
-      // Map sample indices to pixels - handle case where data.length > rect.w
+      // Map sample indices to pixels
       const sampleIndexRatio = Math.max(1, data.length / rect.w);
-      
-      // Ensure minimum line height of 2 pixels when min === max
       const minPixelHeight = 2.0;
       
-      // Build path once with all min/max lines, then stroke once
+      // Build continuous zig-zag path from min-max-min-max values
+      // This creates a smooth envelope like line mode does
       ctx.beginPath();
-      let pathBuilt = false;
+      let firstPoint = true;
       
       for(let x = 0; x < rect.w; x++) {
         const startSample = startIdx + Math.floor(x * sampleIndexRatio);
         const endSample = Math.min(Math.floor((x + 1) * sampleIndexRatio), data.length);
         
-        // Skip if we've run out of data
         if(startSample >= data.length) break;
         
         let min = Infinity;
@@ -1715,17 +1712,17 @@
           if(v > max) max = v;
         }
         
-        // Clamp to valid range to prevent NaN
+        // Clamp to valid range
         if(min === Infinity) min = 0;
         if(max === -Infinity) max = 0;
         
-        // Ensure min < max (swap if needed)
+        // Ensure min < max
         if(min > max) [min, max] = [max, min];
         
         let yMin = rect.y + (0.5 - min * 0.45) * rect.h;
         let yMax = rect.y + (0.5 - max * 0.45) * rect.h;
         
-        // Ensure minimum line height in pixels
+        // Ensure minimum line height
         if(Math.abs(yMax - yMin) < minPixelHeight) {
           const center = (yMin + yMax) / 2;
           yMin = center - minPixelHeight / 2;
@@ -1734,14 +1731,17 @@
         
         const xPos = rect.x + x;
         
-        // Add vertical line to path
-        ctx.moveTo(xPos, yMin);
-        ctx.lineTo(xPos, yMax);
-        pathBuilt = true;
+        // Create continuous zig-zag: min → max → min → max
+        if(firstPoint) {
+          ctx.moveTo(xPos, yMax);  // Start at the peak
+          firstPoint = false;
+        } else {
+          ctx.lineTo(xPos, yMax);  // Line to peak
+        }
+        ctx.lineTo(xPos, yMin);  // Line to valley
       }
       
-      // Stroke all lines at once for consistent rendering
-      if(pathBuilt) ctx.stroke();
+      ctx.stroke();
     }
     
     drawTriggerMarker(ctx, rect) {
