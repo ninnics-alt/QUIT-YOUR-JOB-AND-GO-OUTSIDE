@@ -1688,36 +1688,25 @@
       const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
       ctx.lineWidth = isPS2 ? 2.0 : 1.5;
       
-      // Map sample indices to pixels
-      const sampleIndexRatio = Math.max(1, data.length / rect.w);
+      const samplesPerPixel = Math.max(1, Math.floor(data.length / rect.w));
       const minPixelHeight = 2.0;
       
-      // Build continuous zig-zag path from min-max-min-max values
-      // This creates a smooth envelope like line mode does
       ctx.beginPath();
       let firstPoint = true;
       
       for(let x = 0; x < rect.w; x++) {
-        const startSample = startIdx + Math.floor(x * sampleIndexRatio);
-        const endSample = Math.min(Math.floor((x + 1) * sampleIndexRatio), data.length);
+        const idx = startIdx + x * samplesPerPixel;
+        if(idx >= data.length) break;
         
-        if(startSample >= data.length) break;
+        // Find min/max in this pixel range
+        let min = data[idx];
+        let max = data[idx];
         
-        let min = Infinity;
-        let max = -Infinity;
-        
-        for(let i = startSample; i < endSample; i++) {
+        for(let i = idx; i < Math.min(idx + samplesPerPixel, data.length); i++) {
           const v = data[i];
           if(v < min) min = v;
           if(v > max) max = v;
         }
-        
-        // Clamp to valid range
-        if(min === Infinity) min = 0;
-        if(max === -Infinity) max = 0;
-        
-        // Ensure min < max
-        if(min > max) [min, max] = [max, min];
         
         let yMin = rect.y + (0.5 - min * 0.45) * rect.h;
         let yMax = rect.y + (0.5 - max * 0.45) * rect.h;
@@ -1731,14 +1720,14 @@
         
         const xPos = rect.x + x;
         
-        // Create continuous zig-zag: min → max → min → max
+        // Draw envelope as connected line: max → min for each pixel
         if(firstPoint) {
-          ctx.moveTo(xPos, yMax);  // Start at the peak
+          ctx.moveTo(xPos, yMax);
           firstPoint = false;
         } else {
-          ctx.lineTo(xPos, yMax);  // Line to peak
+          ctx.lineTo(xPos, yMax);
         }
-        ctx.lineTo(xPos, yMin);  // Line to valley
+        ctx.lineTo(xPos, yMin);
       }
       
       ctx.stroke();
