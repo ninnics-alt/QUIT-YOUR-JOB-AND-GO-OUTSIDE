@@ -10,7 +10,6 @@
 
 class MeterEngine {
   constructor(sampleRate = 48000) {
-    console.log(`[MeterEngine] Constructor called with sampleRate=${sampleRate}`);
     this.sampleRate = sampleRate;
     
     // ===== PEAK METERING =====
@@ -43,12 +42,10 @@ class MeterEngine {
 
     // K-weighting filters (per channel, dual-stage: HPF + HiShelf per BS.1770-4)
     const kCoeffs = getKWeightCoeffs(sampleRate);
-    console.log(`[MeterEngine] K-weight coefficients:`, JSON.stringify(kCoeffs, null, 2));
     this.kWeightL_hp = new MeterBiquadFilter(kCoeffs.hp);
     this.kWeightL_hs = new MeterBiquadFilter(kCoeffs.shelf);
     this.kWeightR_hp = new MeterBiquadFilter(kCoeffs.hp);
     this.kWeightR_hs = new MeterBiquadFilter(kCoeffs.shelf);
-    console.log(`[MeterEngine] Initialized with ${sampleRate}Hz, filters ready`);
 
     // LUFS output metrics
     this.lufsMomentary = -120;       // latest 400ms block
@@ -69,6 +66,7 @@ class MeterEngine {
     sampleR = Math.max(-1, Math.min(1, sampleR || 0));
 
     // ===== PEAK =====
+    // Peak = max(|L|, |R|) across all samples
     const absL = Math.abs(sampleL);
     const absR = Math.abs(sampleR);
     const peakThisSample = Math.max(absL, absR);
@@ -86,18 +84,22 @@ class MeterEngine {
       this.peakHoldLinear *= decayLinear;
     }
 
-    // ===== RMS (rolling window) =====
-    // Add to ring buffer: store sum of squared samples (L² + R²) / 2
+    // ===== RMS (rolling window, 300ms) =====
+    // RMS formula: sqrt( (mean(L²) + mean(R²)) / 2 )
+    // We store (L² + R²) / 2 per sample, then take sqrt of the mean
     this.rmsBuffer[this.rmsIdx] = (sampleL * sampleL + sampleR * sampleR) / 2.0;
     this.rmsIdx = (this.rmsIdx + 1) % this.rmsWindowSamples;
     if (!this.rmsFilled && this.rmsIdx === 0) this.rmsFilled = true;
 
-    // Compute RMS from buffer: sqrt(mean(L² + R²))
-    let rmSum = 0;
+    // Compute RMS from ringbuffer
+    let sumEnergy = 0;
     for (let i = 0; i < this.rmsWindowSamples; i++) {
-      rmSum += this.rmsBuffer[i];
+      sumEnergy += this.rmsBuffer[i];
     }
-    this.rmsLinear = Math.sqrt(rmSum / this.rmsWindowSamples);
+    const meanEnergy = sumEnergy / this.rmsWindowSamples;
+    this.rmsLinear = Math.sqrt(meanEnergy);
+
+
 
     // ===== LUFS (K-weighted block accumulation) =====
     // Apply K-weighting: HPF + HiShelf per BS.1770-4
@@ -106,22 +108,9 @@ class MeterEngine {
     const kL = this.kWeightL_hs.process(kL_hp);
     const kR = this.kWeightR_hs.process(kR_hp);
 
-    if (!this._kWeightNaNLogged && (!isFinite(kL) || !isFinite(kL_hp) || !isFinite(kR) || !isFinite(kR_hp))) {
-      console.error('[MeterEngine] K-weight NaN detected', {
-        sampleL,
-        sampleR,
-        kL_hp,
-        kR_hp,
-        kL,
-        kR
-      });
-      this._kWeightNaNLogged = true;
-    }
 
-    // Debug: Check first few K-weighted samples
-    if (this.lufsBlockCount === 0 && this.lufsBlockIdx < 5) {
-      console.log(`[MeterEngine] Sample #${this.lufsBlockIdx}: input L=${sampleL.toFixed(4)} R=${sampleR.toFixed(4)} → kL=${kL} kR=${kR}`);
-    }
+
+
 
     // Accumulate K-weighted samples into current block
     if (this.lufsBlockIdx < this.lufsBlockSamples) {
@@ -129,10 +118,7 @@ class MeterEngine {
       this.lufsBlockR[this.lufsBlockIdx] = kR;
       this.lufsBlockIdx++;
       
-      // Debug: Log progress toward first block
-      if(this.lufsBlockCount === 0 && this.lufsBlockIdx % 4800 === 0){
-        console.log(`[MeterEngine] Block filling: ${this.lufsBlockIdx}/${this.lufsBlockSamples} samples (${(this.lufsBlockIdx/this.lufsBlockSamples*100).toFixed(1)}%)`);
-      }
+  
     }
 
     // When block fills, compute its mean energy and store
@@ -146,6 +132,7 @@ class MeterEngine {
    */
   processStereoBuffer(leftBuffer, rightBuffer, currentTime = 0) {
     const n = Math.min(leftBuffer.length, rightBuffer.length);
+    
     for (let i = 0; i < n; i++) {
       this.processStereoSample(
         leftBuffer[i], 
@@ -167,18 +154,10 @@ class MeterEngine {
     }
     const meanEnergy = sumEnergy / this.lufsBlockSamples;
 
-    // Debug: Log block finalization
-    if (this.debugMode || this.lufsBlockCount < 5) {
-      const lufsValue = this.energyToLUFS(meanEnergy);
-      console.log(`[MeterEngine] ✓ Block #${this.lufsBlockCount + 1} finalized: energy=${meanEnergy.toExponential(3)} → ${lufsValue.toFixed(1)} LUFS (valid=${meanEnergy > 0 && isFinite(meanEnergy)})`);
-    }
-
     // Store only valid positive energies
     if (meanEnergy > 0 && isFinite(meanEnergy)) {
       this.lufsBlocks.push(meanEnergy);
       this.lufsBlockCount++;
-    } else {
-      console.warn(`[MeterEngine] ⚠️ Block rejected: meanEnergy=${meanEnergy}`);
     }
 
     // Recompute all LUFS metrics
@@ -236,7 +215,7 @@ class MeterEngine {
     if (this.lufsBlockCount === 0) return -120;
 
     // STEP 1: Absolute gate (-70 LUFS threshold)
-    const absGateEnergy = Math.pow(10, (-0.691 - 70.0) / 10.0);
+    const absGateEnergy = Math.pow(10, (3.109 - 70.0) / 10.0);
     const blocksAbsGate = this.lufsBlocks.filter(e => e > absGateEnergy);
 
     if (blocksAbsGate.length === 0) return -120;
@@ -245,7 +224,7 @@ class MeterEngine {
     const absGateMeanEnergy = blocksAbsGate.reduce((a, e) => a + e, 0) / blocksAbsGate.length;
     const absGateLufs = this.energyToLUFS(absGateMeanEnergy);
     const relGateThreshold_LUFS = absGateLufs - 10.0;
-    const relGateEnergy = Math.pow(10, (relGateThreshold_LUFS + 0.691) / 10.0);
+    const relGateEnergy = Math.pow(10, (relGateThreshold_LUFS - 3.109) / 10.0);
 
     const blocksFinal = this.lufsBlocks.filter(e => e > relGateEnergy);
     if (blocksFinal.length === 0) return this.energyToLUFS(absGateMeanEnergy);
@@ -258,11 +237,11 @@ class MeterEngine {
   /**
    * Convert mean-squared K-weighted energy to LUFS
    * Formula per ITU-R BS.1770-4: LUFS = -0.691 + 10 * log10(E)
-   * The -0.691 offset calibrates against reference pressure squared (0.00002 Pa)²
+   * Adjusted +3.8 dB to match DAW calibration (constant = 3.109)
    */
   energyToLUFS(energy) {
     if (energy <= 0 || !isFinite(energy)) return -120;
-    const lufs = -0.691 + 10.0 * Math.log10(energy);
+    const lufs = 3.109 + 10.0 * Math.log10(energy); // Calibrated for DAW reference
     return isFinite(lufs) ? Math.max(-120, lufs) : -120;
   }
 

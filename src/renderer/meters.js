@@ -3,6 +3,12 @@
  * LUFS Integrated/Momentary/Peak + RMS/Peak dBFS with mini bars, hold values, and clip indicators
  */
 
+// UI Smoothing Constants
+const RMS_TAU = 0.250;           // 250ms smoothing for RMS display
+const PEAK_TAU = 0.120;          // 120ms smoothing for Peak display
+const HOLD_FREEZE = 0.800;       // 800ms freeze duration for hold
+const HOLD_DECAY_DB_PER_SEC = 12.0; // 12 dB/sec decay rate
+
 class MeterDisplay {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
@@ -10,7 +16,7 @@ class MeterDisplay {
     this.width = this.canvas.width;
     this.height = this.canvas.height;
 
-    // Meter data
+    // Meter data (raw DSP values, not smoothed)
     this.meters = {
       lufsIntegrated: 0,
       lufsMomentary: 0,
@@ -18,6 +24,15 @@ class MeterDisplay {
       rmsDbs: 0,
       peakDbfs: 0,
       peakHoldDbfs: 0,
+    };
+
+    // Display-smoothed values (UI layer only)
+    this.displaySmoothed = {
+      rmsDbs: -120,
+      peakDbfs: -120,
+      holdDbfs: -120,
+      holdTimerSec: 0,
+      lastPeakTimeSec: 0,
     };
 
     // Hold values (for peak metrics)
@@ -31,6 +46,9 @@ class MeterDisplay {
     // Clip indicators
     this.hasClipped = false;
     this.clipTime = 0;
+
+    // Timing for smoothing
+    this.lastUpdateTime = performance.now() / 1000;
 
     this.detailLevel = 'med'; // low, med, high
   }
@@ -57,9 +75,9 @@ class MeterDisplay {
       { x: spacing.md, y: spacing.lg * 2, label: 'LUFS Integrated', value: this.meters.lufsIntegrated, unit: 'LUFS', min: -60, max: 0, holdValue: this.holdValues.lufsPeak },
       { x: spacing.md + meterW + spacing.md, y: spacing.lg * 2, label: 'LUFS Momentary', value: this.meters.lufsMomentary, unit: 'LUFS', min: -60, max: 0 },
       { x: spacing.md + (meterW + spacing.md) * 2, y: spacing.lg * 2, label: 'LUFS Peak', value: this.meters.lufsPeak, unit: 'LUFS', min: -60, max: 0, holdValue: this.holdValues.lufsPeak, showHold: true },
-      { x: spacing.md, y: spacing.lg * 2 + meterH + spacing.md, label: 'RMS', value: this.meters.rmsDbs, unit: 'dBFS', min: -60, max: 0 },
-      { x: spacing.md + meterW + spacing.md, y: spacing.lg * 2 + meterH + spacing.md, label: 'Peak', value: this.meters.peakDbfs, unit: 'dBFS', min: -60, max: 0 },
-      { x: spacing.md + (meterW + spacing.md) * 2, y: spacing.lg * 2 + meterH + spacing.md, label: 'Peak Hold', value: this.meters.peakHoldDbfs, unit: 'dBFS', min: -60, max: 0, showHold: true },
+      { x: spacing.md, y: spacing.lg * 2 + meterH + spacing.md, label: 'RMS', value: this.displaySmoothed.rmsDbs, unit: 'dBFS', min: -60, max: 0 },
+      { x: spacing.md + meterW + spacing.md, y: spacing.lg * 2 + meterH + spacing.md, label: 'Peak', value: this.displaySmoothed.peakDbfs, unit: 'dBFS', min: -60, max: 0 },
+      { x: spacing.md + (meterW + spacing.md) * 2, y: spacing.lg * 2 + meterH + spacing.md, label: 'Peak Hold', value: this.displaySmoothed.holdDbfs, unit: 'dBFS', min: -60, max: 0, showHold: true },
     ];
 
     positions.forEach((pos) => {
@@ -186,6 +204,7 @@ class MeterDisplay {
 
   // Update methods
   updateMeters(integrated, momentary, peak, rms, peakLinear, peakHold) {
+    // Update raw DSP values (accurate, high-rate)
     this.meters.lufsIntegrated = integrated;
     this.meters.lufsMomentary = momentary;
     this.meters.lufsPeak = peak;
@@ -193,7 +212,47 @@ class MeterDisplay {
     this.meters.peakDbfs = 20 * Math.log10(Math.max(0.00001, peakLinear));
     this.meters.peakHoldDbfs = 20 * Math.log10(Math.max(0.00001, peakHold));
 
-    // Track peak hold values
+    // Time-based smoothing for display values
+    const now = performance.now() / 1000; // seconds
+    const dt = now - this.lastUpdateTime;
+    this.lastUpdateTime = now;
+
+    // Clamp dt to prevent massive jumps if tab was backgrounded
+    const dtClamped = Math.min(dt, 0.1);
+
+    // UI-layer smoothing using time-based EMA: alpha = 1 - exp(-dt / tau)
+    const alphaRms = 1 - Math.exp(-dtClamped / RMS_TAU);
+    const alphaPeak = 1 - Math.exp(-dtClamped / PEAK_TAU);
+
+    // Smooth RMS display
+    this.displaySmoothed.rmsDbs += alphaRms * (this.meters.rmsDbs - this.displaySmoothed.rmsDbs);
+
+    // Smooth Peak display
+    this.displaySmoothed.peakDbfs += alphaPeak * (this.meters.peakDbfs - this.displaySmoothed.peakDbfs);
+
+    // Peak Hold behavior: freeze for HOLD_FREEZE seconds, then decay at HOLD_DECAY_DB_PER_SEC
+    // Always latch to new peaks
+    if (this.meters.peakDbfs > this.displaySmoothed.holdDbfs) {
+      this.displaySmoothed.holdDbfs = this.meters.peakDbfs;
+      this.displaySmoothed.lastPeakTimeSec = now;
+      this.displaySmoothed.holdTimerSec = 0;
+    } else {
+      // Accumulate hold timer
+      this.displaySmoothed.holdTimerSec += dtClamped;
+
+      // After freeze duration, decay
+      if (this.displaySmoothed.holdTimerSec > HOLD_FREEZE) {
+        const decayAmount = HOLD_DECAY_DB_PER_SEC * dtClamped;
+        this.displaySmoothed.holdDbfs -= decayAmount;
+        
+        // Never drop below current peak
+        if (this.displaySmoothed.holdDbfs < this.meters.peakDbfs) {
+          this.displaySmoothed.holdDbfs = this.meters.peakDbfs;
+        }
+      }
+    }
+
+    // Track peak hold values for LUFS Peak display
     if (this.meters.lufsPeak > this.holdValues.lufsPeak) {
       this.holdValues.lufsPeak = this.meters.lufsPeak;
       this.holdValues.lufsPeakHoldTime = Date.now();
@@ -210,7 +269,7 @@ class MeterDisplay {
       this.clipTime = Date.now();
     }
 
-    // Decay hold values
+    // Decay hold values (for LUFS Peak hold indicator)
     if (Date.now() - this.holdValues.lufsPeakHoldTime > THEME.performance.peakHoldDecay) {
       this.holdValues.lufsPeak *= 0.98;
     }
@@ -222,6 +281,8 @@ class MeterDisplay {
   resetHold() {
     this.holdValues.lufsPeak = 0;
     this.holdValues.peakDbfs = 0;
+    this.displaySmoothed.holdDbfs = -120;
+    this.displaySmoothed.holdTimerSec = 0;
   }
 
   setDetailLevel(level) {

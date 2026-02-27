@@ -278,6 +278,19 @@
   const attackTime = 0.02; // seconds
   const releaseTime = 0.25; // seconds
   
+  // UI display smoothing (for text elements)
+  const UI_RMS_TAU = 0.250;
+  const UI_PEAK_TAU = 0.120;
+  const UI_HOLD_FREEZE = 0.800;
+  const UI_HOLD_DECAY_DB_PER_SEC = 12.0;
+  let uiDisplaySmoothed = {
+    rmsDbs: -120,
+    peakDbfs: -120,
+    holdDbfs: -120,
+    holdTimerSec: 0,
+    lastUpdateTimeSec: performance.now() / 1000
+  };
+  
   // NEW: Detail level state
   let detailLevel = 'med'; // 'low', 'med', 'high'
   const detailToggle = document.getElementById('detailToggle');
@@ -504,6 +517,11 @@
     sampleRate = audioCtx.sampleRate || 48000;
     source = audioCtx.createMediaStreamSource(stream);
 
+    // Input gain node (no correction needed with proper DAW levels)
+    const inputGain = audioCtx.createGain();
+    inputGain.gain.value = 1.0; // Unity gain
+    source.connect(inputGain);
+
     // Debug: Log stream info
     console.log('[Audio] Stream active:', stream.active);
     console.log('[Audio] Tracks:', stream.getTracks().map(t => ({
@@ -569,8 +587,8 @@
       console.log('[BassCarPanel] Initialized');
     }
 
-    // BYPASS K-WEIGHT FOR TESTING: connect source directly to analyser
-    source.connect(analyser);
+    // BYPASS K-WEIGHT FOR TESTING: connect inputGain directly to analyser
+    inputGain.connect(analyser);
     analyser.connect(splitter);
     splitter.connect(analyserL, 0);
     splitter.connect(analyserR, 1);
@@ -627,6 +645,33 @@
       try{
         analyserL.getFloatTimeDomainData(leftArray);
         analyserR.getFloatTimeDomainData(rightArray);
+        
+        // Debug: Log channel check with first 20 samples
+        if (!window._channelSampleDebugLogged && leftArray.length > 0) {
+          let peakL = 0, peakR = 0, sumL2 = 0, sumR2 = 0;
+          let sampleDebug = 'Ch L samples: ';
+          for (let i = 0; i < Math.min(10, leftArray.length); i++) {
+            const l = leftArray[i] || 0;
+            const r = rightArray[i] || 0;
+            peakL = Math.max(peakL, Math.abs(l));
+            peakR = Math.max(peakR, Math.abs(r));
+            sumL2 += l * l;
+            sumR2 += r * r;
+            if (i < 10) sampleDebug += `${l.toFixed(5)}, `;
+          }
+          console.log(`[CHANNELS] ${sampleDebug.slice(0, -2)}`);
+          sampleDebug = 'Ch R samples: ';
+          for (let i = 0; i < Math.min(10, rightArray.length); i++) {
+            const r = rightArray[i] || 0;
+            if (i < 10) sampleDebug += `${r.toFixed(5)}, `;
+          }
+          console.log(`[CHANNELS] ${sampleDebug.slice(0, -2)}`);
+          const n = Math.min(100, leftArray.length, rightArray.length);
+          const rmsL = Math.sqrt(sumL2 / n);
+          const rmsR = Math.sqrt(sumR2 / n);
+          console.log(`[CHANNELS] Stats: peakL=${peakL.toFixed(6)} peakR=${peakR.toFixed(6)}, rmsL=${rmsL.toFixed(6)} rmsR=${rmsR.toFixed(6)}`);
+          window._channelSampleDebugLogged = true;
+        }
         
         // Draw oscilloscope with stereo data
         if(oscPanel) {
@@ -704,14 +749,40 @@
         stats = computeStatsAndLUFS(dataArray);
       }
 
+      // Apply UI smoothing to text displays
+      const nowSec = performance.now() / 1000;
+      const dt = Math.min(nowSec - uiDisplaySmoothed.lastUpdateTimeSec, 0.1);
+      uiDisplaySmoothed.lastUpdateTimeSec = nowSec;
+      
+      // Time-based EMA smoothing
+      const alphaRms = 1 - Math.exp(-dt / UI_RMS_TAU);
+      const alphaPeak = 1 - Math.exp(-dt / UI_PEAK_TAU);
+      
+      uiDisplaySmoothed.rmsDbs += alphaRms * (stats.db - uiDisplaySmoothed.rmsDbs);
+      uiDisplaySmoothed.peakDbfs += alphaPeak * (stats.peakDb - uiDisplaySmoothed.peakDbfs);
+      
+      // Peak hold with freeze and decay
+      if (stats.peakDb > uiDisplaySmoothed.holdDbfs) {
+        uiDisplaySmoothed.holdDbfs = stats.peakDb;
+        uiDisplaySmoothed.holdTimerSec = 0;
+      } else {
+        uiDisplaySmoothed.holdTimerSec += dt;
+        if (uiDisplaySmoothed.holdTimerSec > UI_HOLD_FREEZE) {
+          uiDisplaySmoothed.holdDbfs -= UI_HOLD_DECAY_DB_PER_SEC * dt;
+          if (uiDisplaySmoothed.holdDbfs < stats.peakDb) {
+            uiDisplaySmoothed.holdDbfs = stats.peakDb;
+          }
+        }
+      }
+      
       if(lufsEl) lufsEl.textContent = stats.lufs.toFixed(1) + ' LUFS';
       const lufsMEl = document.getElementById('lufsM');
       if(lufsMEl) lufsMEl.textContent = stats.momentaryLufs.toFixed(1) + ' LUFS';
       const lufsSEl = document.getElementById('lufsS');
       if(lufsSEl) lufsSEl.textContent = stats.peakLufs.toFixed(1) + ' LUFS';
-      if(rmsEl) rmsEl.textContent = stats.db.toFixed(1) + ' dBFS';
-      if(peakEl) peakEl.textContent = stats.peakDb.toFixed(1) + ' dBFS';
-      if(peakHoldEl) peakHoldEl.textContent = stats.holdDb.toFixed(1) + ' dBFS';
+      if(rmsEl) rmsEl.textContent = uiDisplaySmoothed.rmsDbs.toFixed(1) + ' dBFS';
+      if(peakEl) peakEl.textContent = uiDisplaySmoothed.peakDbfs.toFixed(1) + ' dBFS';
+      if(peakHoldEl) peakHoldEl.textContent = uiDisplaySmoothed.holdDbfs.toFixed(1) + ' dBFS';
 
       // Debug info with new metering data (optional elements)
       const sampleRmsEl = document.getElementById('sampleRms');
@@ -721,7 +792,7 @@
       const bufLenEl = document.getElementById('bufLenDebug');
       if(bufLenEl) bufLenEl.textContent = bufLen;
       const rawPeakEl = document.getElementById('rawPeakDebug');
-      if(rawPeakEl) rawPeakEl.textContent = 'Peak: ' + stats.peakDb.toFixed(1) + ' | Hold: ' + stats.holdDb.toFixed(1);
+      if(rawPeakEl) rawPeakEl.textContent = `🎚️ DSP: Peak=${stats.peakDb.toFixed(1)} dBFS, RMS=${stats.db.toFixed(1)} dBFS, LUFS-M=${stats.momentaryLufs.toFixed(1)} | ref:-18dBFS peak,-21dBFS rms,-18.1LUFS`;
       const meanSqEl = document.getElementById('meanSqDebug');
       if(meanSqEl) meanSqEl.textContent = 'Raw Peak Linear: ' + stats.peak.toFixed(6) + ' | Hold Linear: ' + (Math.pow(10, stats.holdDb/20)).toFixed(6);
       const blockCountText = meterEngine ? (' | Blocks: ' + meterEngine.getMetrics().blockCount) : '';
@@ -1986,6 +2057,11 @@
   refreshBtn.addEventListener('click', async ()=>{
     try{
       await listDevices();
+      // Reset all meters
+      if(meterEngine) {
+        meterEngine.reset();
+        console.log('All meters reset');
+      }
       console.log('Device list refreshed');
     }catch(e){ console.error(e); }
   });
