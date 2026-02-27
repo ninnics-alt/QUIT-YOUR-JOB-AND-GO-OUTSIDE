@@ -1078,29 +1078,19 @@
     // Trace styles - use theme-specific trace color
     const traceColor = colors.trace || colors.accentGreen || '#00ff88';
     if(vsStyle === 'phosphor'){
-      // Fade persistence buffer
+      // Fade persistence buffer (faster: less aggressive fade, no shadow blur)
       vsBufCtx.globalCompositeOperation = 'source-over';
       vsBufCtx.fillStyle = colors.bgInset;
-      vsBufCtx.globalAlpha = 0.08;
+      vsBufCtx.globalAlpha = 0.12;  // More aggressive fade for snappier response
       vsBufCtx.fillRect(0, 0, vsBuffer.width, vsBuffer.height);
       vsBufCtx.globalAlpha = 1;
 
-      // Two-pass glow into persistence buffer (additive)
+      // Single-pass direct draw to persistence buffer (no shadow blur)
       vsBufCtx.globalCompositeOperation = 'lighter';
       const dot = Math.max(1, vsDotSize * dpr);
 
-      vsBufCtx.globalAlpha = 0.25;
-      vsBufCtx.shadowBlur = 3;
-      vsBufCtx.shadowColor = traceColor;
-      for(let i = 0; i < vsPointCount; i++){
-        const px = vsPointsX[i] * dpr;
-        const py = vsPointsY[i] * dpr;
-        vsBufCtx.fillStyle = traceColor;
-        vsBufCtx.fillRect(px - dot, py - dot, dot * 2, dot * 2);
-      }
-
-      vsBufCtx.globalAlpha = 0.8;
-      vsBufCtx.shadowBlur = 0;
+      // Draw directly without expensive shadow
+      vsBufCtx.globalAlpha = 0.9;
       for(let i = 0; i < vsPointCount; i++){
         const px = vsPointsX[i] * dpr;
         const py = vsPointsY[i] * dpr;
