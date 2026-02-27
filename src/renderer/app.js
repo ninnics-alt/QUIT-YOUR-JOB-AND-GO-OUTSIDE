@@ -1685,22 +1685,13 @@
     
     drawMinMax(data, startIdx, color, ctx, rect) {
       ctx.strokeStyle = color;
-      // PS2 theme: chunkier traces
+      // Make lines thicker for better visibility, especially at high DPI
       const isPS2 = window.THEME && window.THEME.currentPalette === 'ps2';
-      ctx.lineWidth = isPS2 ? 1.5 : 1;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.lineWidth = isPS2 ? (2.0 * dpr) : (1.5 * dpr);
       
       // Map sample indices to pixels - handle case where data.length > rect.w
       const sampleIndexRatio = Math.max(1, data.length / rect.w);
-      
-      // Debug: log first call only
-      if(!window._minmaxDebugLogged) {
-        console.log('[drawMinMax] data.length=' + data.length + 
-                    ' startIdx=' + startIdx + 
-                    ' rect.w=' + rect.w + 
-                    ' rect.h=' + rect.h +
-                    ' sampleIndexRatio=' + sampleIndexRatio.toFixed(2));
-        window._minmaxDebugLogged = true;
-      }
       
       for(let x = 0; x < rect.w; x++) {
         const startSample = startIdx + Math.floor(x * sampleIndexRatio);
@@ -1718,10 +1709,14 @@
           if(v > max) max = v;
         }
         
-        // Always draw, even if no samples in range - use center line as fallback
-        if(min === Infinity || max === -Infinity) {
-          min = 0;
-          max = 0;
+        // Clamp to valid range to prevent NaN
+        if(min === Infinity) min = 0;
+        if(max === -Infinity) max = 0;
+        
+        // Ensure min < max (swap if needed, add small epsilon if equal)
+        if(min > max) [min, max] = [max, min];
+        if(min === max) {
+          max = min + 0.001; // Ensure at least 1px of line height
         }
         
         const yMin = rect.y + (0.5 - min * 0.45) * rect.h;
