@@ -752,14 +752,19 @@
           meterEngine.processStereoBuffer(leftArray, rightArray, audioCtx.currentTime || (Date.now()/1000));
           const m = meterEngine.getMetrics();
           
+          // Validate peak values from MeterEngine; fall back to manual calc if invalid
+          const fallbackStats = computeStatsAndLUFS(dataArray);
+          const meterPeakDb = m.peakDbfs;
+          const useFallbackPeak = !isFinite(meterPeakDb) || meterPeakDb === 0.0 || meterPeakDb < -200;
+          
           stats = {
             lufs: m.lufsIntegrated,
             momentaryLufs: m.lufsMomentary,
             peakLufs: m.lufsPeak,
             db: m.rmsDbfs,
-            peak: m.peakLinear,
-            peakDb: m.peakDbfs,
-            holdDb: m.peakHoldDbfs,
+            peak: useFallbackPeak ? fallbackStats.peak : m.peakLinear,
+            peakDb: useFallbackPeak ? fallbackStats.peakDb : meterPeakDb,
+            holdDb: useFallbackPeak ? fallbackStats.holdDb : m.peakHoldDbfs,
             rmsLinear: m.rmsLinear
           };
         }catch(e){
