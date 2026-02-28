@@ -298,9 +298,9 @@
   
   // UI display smoothing (for text elements)
   const UI_RMS_TAU = 0.100;
-  const UI_PEAK_TAU = 0.120;
-  const UI_HOLD_FREEZE = 0.800;
-  const UI_HOLD_DECAY_DB_PER_SEC = 12.0;
+  const UI_PEAK_TAU = 0.050;        // Faster peak detection (50ms vs 120ms)
+  const UI_HOLD_FREEZE = 4.000;     // Hold peak for 4 seconds
+  const UI_HOLD_DECAY_DB_PER_SEC = 6.0;  // Slower decay (6 dB/sec vs 12 dB/sec)
   let uiDisplaySmoothed = {
     rmsDbs: -120,
     peakDbfs: -120,
