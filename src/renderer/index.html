@@ -168,6 +168,33 @@
         </div>
       </div>
     </div>
+
+    <div id="miniModeContainer" class="mini-mode-container" hidden>
+      <div class="mini-mode-header">
+        <select id="miniModuleSelect" class="mini-mode-select" title="Mini mode module">
+          <option value="miniMeters">Mini Meters</option>
+          <option value="panel-vectorscope">Vectorscope</option>
+          <option value="panel-osc">Oscilloscope</option>
+          <option value="panel-specgram">Spectrogram</option>
+          <option value="panel-specgraph">Spectrograph</option>
+          <option value="panel-goniometer">Goniometer</option>
+          <option value="panel-wave">Bass Car / Waveform</option>
+          <option value="panel-meters">Instrument Meters</option>
+        </select>
+        <select id="miniCornerSelect" class="mini-mode-select" title="Window corner">
+          <option value="top-right">Top Right</option>
+          <option value="top-left">Top Left</option>
+          <option value="bottom-right">Bottom Right</option>
+          <option value="bottom-left">Bottom Left</option>
+        </select>
+        <button id="miniExitBtn" class="mini-mode-btn" title="Exit minimode">Exit</button>
+      </div>
+      <div id="miniModeBody" class="mini-mode-body">
+        <div id="miniMetersWrap" class="mini-meters-wrap">
+          <canvas id="miniMetersCanvas"></canvas>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="devicePanel" class="panel hidden">
@@ -207,6 +234,7 @@
   <script src="glitter-layer.js"></script>
   <script src="bass-car-panel.js"></script>
   <script src="goniometer-panel.js"></script>
+  <script src="mini-mode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

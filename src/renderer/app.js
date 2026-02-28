@@ -3,6 +3,7 @@
   const startBtn = document.getElementById('start');
   const themeSelect = document.getElementById('themeSelect');
   const autoStartEl = document.getElementById('autoStart');
+  const minimodeBtn = document.getElementById('toggleMinimode');
   const lufsEl = document.getElementById('lufs');
   const wasmStatusEl = document.getElementById('wasmStatus');
   const rmsEl = document.getElementById('rms');
@@ -31,6 +32,62 @@
   const specBufCtx = specBuf.getContext('2d');
   const specGraphCanvas = document.getElementById('specgraph');
   const specGraphCtx = specGraphCanvas.getContext('2d');
+
+  const appState = {
+    isMiniMode: false,
+    miniModuleId: 'miniMeters',
+    miniCorner: 'top-right'
+  };
+  const MINI_WINDOW_WIDTH = 460;
+  const MINI_WINDOW_HEIGHT = 320;
+
+  function shouldRenderPanel(panelId){
+    if(!appState.isMiniMode) return true;
+    return appState.miniModuleId === panelId;
+  }
+
+  function updateMiniButtonLabel(){
+    if(!minimodeBtn) return;
+    minimodeBtn.textContent = appState.isMiniMode ? 'Exit Mini' : 'Minimode';
+  }
+
+  async function enableMiniMode(){
+    if(appState.isMiniMode) return;
+    const payload = {
+      corner: appState.miniCorner,
+      width: MINI_WINDOW_WIDTH,
+      height: MINI_WINDOW_HEIGHT,
+      moduleId: appState.miniModuleId,
+      skipTaskbar: false
+    };
+    if(window.electron && window.electron.minimodeEnable){
+      await window.electron.minimodeEnable(payload);
+    }
+    appState.isMiniMode = true;
+    if(window.MiniModeController){
+      window.MiniModeController.enable({ moduleId: appState.miniModuleId, corner: appState.miniCorner });
+    }else{
+      document.body.setAttribute('data-layout', 'mini');
+    }
+    updateMiniButtonLabel();
+  }
+
+  async function disableMiniMode(){
+    if(!appState.isMiniMode) return;
+    if(window.electron && window.electron.minimodeDisable){
+      await window.electron.minimodeDisable();
+    }
+    // Reload the window to reset all panels to their initial state
+    window.location.reload();
+  }
+
+  async function toggleMiniMode(){
+    if(appState.isMiniMode) {
+      await disableMiniMode();
+    } else {
+      await enableMiniMode();
+    }
+  }
   
   // Goniometer panel (upgraded with persistence, heatmap, multiple modes)
   const goniCanvas = document.getElementById('goniometer');
@@ -661,7 +718,10 @@
       analyser.getFloatTimeDomainData(dataArray);
       analyser.getByteFrequencyData(freqData);
       // draw spectrogram and spectrograph
-      try{ drawSpectrogram(freqData); drawSpecGraph(freqData); }catch(e){}
+      try{
+        if(shouldRenderPanel('panel-specgram')) drawSpectrogram(freqData);
+        if(shouldRenderPanel('panel-specgraph')) drawSpecGraph(freqData);
+      }catch(e){}
       // get channel data for vectorscope and oscilloscope
       try{
         analyserL.getFloatTimeDomainData(leftArray);
@@ -695,16 +755,16 @@
         }
         
         // Draw oscilloscope with stereo data
-        if(oscPanel) {
+        if(oscPanel && shouldRenderPanel('panel-osc')) {
           oscPanel.render(leftArray, rightArray);
         }
         
-        drawVectorscope(leftArray, rightArray);
+        if(shouldRenderPanel('panel-vectorscope')) drawVectorscope(leftArray, rightArray);
         const corr = computeCorrelation(leftArray, rightArray);
         if(corrValEl) corrValEl.textContent = corr.toFixed(2);
         
         // Render goniometer with new panel
-        if(goniometerPanel){
+        if(goniometerPanel && shouldRenderPanel('panel-goniometer')){
           try{ 
             const goniRotateEl = document.getElementById('goniRotate');
             const goniDeg = goniRotateEl ? (parseFloat(goniRotateEl.value) || 0) : 0;
@@ -885,18 +945,18 @@
       }
 
       // Render Bass Car Panel (with frequency data for bass detection)
-      if(bassCarPanel && freqDataL && freqDataR){
+      if(shouldRenderPanel('panel-wave') && bassCarPanel && freqDataL && freqDataR){
         // Get frequency data for bass detection (reuse preallocated buffers)
         analyserL.getFloatFrequencyData(freqDataL);
         analyserR.getFloatFrequencyData(freqDataR);
         bassCarPanel.render(freqDataL, freqDataR);
-      } else {
+      } else if(shouldRenderPanel('panel-wave')) {
         // Fallback to old waveform if panel not initialized
         drawWave(dataArray);
       }
       
       // NEW: Update and render MeterDisplay with live metrics
-      if(meterDisplay){
+      if(meterDisplay && shouldRenderPanel('panel-meters')){
         try{
           // Only update meters if meterEngine is ready; otherwise show zeros
           if(meterEngine){
@@ -917,6 +977,15 @@
           }
           meterDisplay.render();
         }catch(e){ console.warn('MeterDisplay render error:', e); }
+      }
+
+      if(appState.isMiniMode && appState.miniModuleId === 'miniMeters' && window.MiniModeController){
+        window.MiniModeController.drawMiniMeters({
+          momentaryLufs: stats.momentaryLufs,
+          rmsDbfs: uiDisplaySmoothed.rmsDbs,
+          peakDbfs: uiDisplaySmoothed.peakDbfs,
+          holdDbfs: uiDisplaySmoothed.holdDbfs
+        });
       }
       
       requestAnimationFrame(tick);
@@ -3085,24 +3154,28 @@
       const raw = localStorage.getItem('qyjo_settings');
       return raw ? JSON.parse(raw) : {
         theme:'ps2', 
-        autoStart:false,
+        autoStart:true,
         vsStyle: 'phosphor',
         vsNormalize: true,
         vsRotate: 0,
-        goniMode: 'PHOSPHOR',
+        goniMode: 'L/R',
         goniMapping: 'LR',
-        goniRotate: 0
+        goniRotate: 45,
+        miniModuleId: 'miniMeters',
+        miniCorner: 'top-right'
       };
     }catch(e){ 
       return {
         theme:'ps2', 
-        autoStart:false,
+        autoStart:true,
         vsStyle: 'phosphor',
         vsNormalize: true,
         vsRotate: 0,
-        goniMode: 'PHOSPHOR',
+        goniMode: 'L/R',
         goniMapping: 'LR',
-        goniRotate: 0
+        goniRotate: 45,
+        miniModuleId: 'miniMeters',
+        miniCorner: 'top-right'
       }; 
     }
   }
@@ -3115,6 +3188,8 @@
   // Apply theme using THEME.applyPalette
   // wire preference UI
   const initialSettings = loadSettings();
+  appState.miniModuleId = initialSettings.miniModuleId || 'miniMeters';
+  appState.miniCorner = initialSettings.miniCorner || 'top-right';
   themeSelect.value = initialSettings.theme || 'ps2';
   autoStartEl.checked = !!initialSettings.autoStart;
   THEME.applyPalette(themeSelect.value);
@@ -3129,17 +3204,58 @@
   const goniModeSelect = document.getElementById('goniModeSelect');
   const goniMappingSelect = document.getElementById('goniMappingSelect');
   const goniRotateSelect = document.getElementById('goniRotate');
-  if(goniModeSelect) goniModeSelect.value = initialSettings.goniMode || 'PHOSPHOR';
+  if(goniModeSelect) goniModeSelect.value = initialSettings.goniMode || 'L/R';
   if(goniMappingSelect) goniMappingSelect.value = initialSettings.goniMapping || 'LR';
-  if(goniRotateSelect) goniRotateSelect.value = initialSettings.goniRotate || 0;
+  if(goniRotateSelect) goniRotateSelect.value = initialSettings.goniRotate || 45;
   
   // Apply visualization settings to components
   if(goniometerPanel){
-    goniometerPanel.setMode(initialSettings.goniMode || 'PHOSPHOR');
+    goniometerPanel.setMode(initialSettings.goniMode || 'L/R');
     goniometerPanel.setMapping(initialSettings.goniMapping || 'LR');
-    goniometerPanel.setRotation(initialSettings.goniRotate || 0);
+    goniometerPanel.setRotation(initialSettings.goniRotate || 45);
   }
   vsStyle = initialSettings.vsStyle || 'phosphor';
+
+  if(window.MiniModeController){
+    window.MiniModeController.init({
+      initialModuleId: appState.miniModuleId,
+      initialCorner: appState.miniCorner,
+      onModuleChange: async (moduleId) => {
+        appState.miniModuleId = moduleId;
+        saveSettings({miniModuleId: moduleId});
+        if(window.electron && window.electron.minimodeSetModule){
+          await window.electron.minimodeSetModule({moduleId});
+        }
+      },
+      onCornerChange: async (corner) => {
+        appState.miniCorner = corner;
+        saveSettings({miniCorner: corner});
+        if(window.electron && window.electron.minimodeSetCorner){
+          await window.electron.minimodeSetCorner({corner});
+        }
+      },
+      onExit: async () => {
+        await disableMiniMode();
+      }
+    });
+  }
+
+  document.body.setAttribute('data-layout', 'normal');
+  updateMiniButtonLabel();
+
+  if(minimodeBtn){
+    minimodeBtn.addEventListener('click', async ()=>{
+      await toggleMiniMode();
+    });
+  }
+
+  window.addEventListener('keydown', async (event) => {
+    const metaOrCtrl = event.metaKey || event.ctrlKey;
+    if(metaOrCtrl && event.shiftKey && (event.key === 'M' || event.key === 'm')){
+      event.preventDefault();
+      await toggleMiniMode();
+    }
+  });
 
   // Enable glitter effect if initial theme is glitter
   if(glitterLayer && THEME.currentPalette === 'glitter'){
