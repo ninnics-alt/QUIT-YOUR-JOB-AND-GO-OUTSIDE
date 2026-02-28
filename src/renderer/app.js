@@ -59,11 +59,18 @@
   let vsLastWidth = 0;
   let vsLastBalance = 0;
 
-  if(vsStyleEl) vsStyleEl.addEventListener('change', (e) => { vsStyle = e.target.value; });
-  if(vsNormalizeEl) vsNormalizeEl.addEventListener('change', (e) => { vsNormalize = e.target.checked; });
+  if(vsStyleEl) vsStyleEl.addEventListener('change', (e) => { 
+    vsStyle = e.target.value;
+    saveSettings({vsStyle: e.target.value});
+  });
+  if(vsNormalizeEl) vsNormalizeEl.addEventListener('change', (e) => { 
+    vsNormalize = e.target.checked;
+    saveSettings({vsNormalize: e.target.checked});
+  });
   if(vsRotateEl) vsRotateEl.addEventListener('change', (e) => {
     const deg = parseFloat(e.target.value) || 0;
     vsRotateRad = (deg * Math.PI) / 180;
+    saveSettings({vsRotate: deg});
   });
   
   // Wire up Goniometer mode and mapping controls
@@ -75,12 +82,14 @@
     if(goniModeSelect){
       goniModeSelect.addEventListener('change', (e) => {
         goniometerPanel.setMode(e.target.value);
+        saveSettings({goniMode: e.target.value});
       });
     }
     
     if(goniMappingSelect){
       goniMappingSelect.addEventListener('change', (e) => {
         goniometerPanel.setMapping(e.target.value);
+        saveSettings({goniMapping: e.target.value});
       });
     }
     
@@ -88,6 +97,7 @@
       goniRotateSelect.addEventListener('change', (e) => {
         const deg = parseFloat(e.target.value) || 0;
         goniometerPanel.setRotation(deg);
+        saveSettings({goniRotate: deg});
       });
     }
   }
@@ -1967,58 +1977,62 @@
   const SPEC_DB_MAX = -12;
   const SPEC_DISPLAY_MIN_HZ = 60;
   const SPEC_DISPLAY_MAX_HZ = 30000;
-  // 3-segment mapping: 60Hz–15kHz (log), 15kHz–20kHz (linear), 20kHz–30kHz (linear, de-emphasized)
-  const SPEC_FREQ_SEGMENT_1_HZ = 15000;  // End of first segment
-  const SPEC_FREQ_SEGMENT_2_HZ = 20000;  // End of second segment (high band start)
-  const SPEC_WIDTH_SHARE_A = 0.72;       // Segment 1: 60–15k (log)
-  const SPEC_WIDTH_SHARE_B = 0.22;       // Segment 2: 15k–20k (linear, boosted)
-  const SPEC_WIDTH_SHARE_C = 0.06;       // Segment 3: 20k–30k (linear, de-emphasized)
+  // 2-segment piecewise log mapping: more space to 10k–15k, less to 15k–20k
+  const SPEC_FREQ_SPLIT_HZ = 15000;      // Split point between segments
+  const SPEC_FREQ_TOP_HZ = 20000;        // Top of useful range (clamped to Nyquist)
+  const SPEC_HI_WIDTH_FRAC = 0.18;       // 18% of width for 15k–20k (compressed)
   const SPEC_LEFT_PAD = 2;
   const SPEC_RIGHT_GUTTER = 48;
   const SPEC_SMOOTH_OCTAVE_WIDTH = 1 / 6;
   const SPEC_AVG_ALPHA = 0.08;
   const SPEC_VIEW_MODE = 'avg'; // 'live' | 'avg'
+  
+  // Silence gate: collapse stagnant spectrum wedge at silence
+  const SPEC_SILENCE_DB = -85;         // RMS below this = silence
+  const SPEC_RELEASE_MS = 250;         // How fast decay to floor when silent (ms)
+  const SPEC_HOLD_MS = 80;             // Short hold after silence detected before decay starts
+  const SPEC_DECAY_DRAW_THRESHOLD = 6; // Only draw if >dbMin+6dB when silent
+  
+  // Silence tracking state variables
+  let specLastRmsDb = SPEC_DB_MIN;     // Broadband RMS from last frame
+  let specSilenceStartTime = null;     // When silence was first detected (null if active)
+  let specIsSilent = false;            // Whether currently in silence decay mode
+  let specLastFrameTimeMs = 0;         // Previous frame time for dt calculation
 
   function buildSpecColumnMap(plotW, sampleRateHz, fMinDisplay, fMaxDisplay, binCount) {
     const safeW = Math.max(1, plotW);
     const safeMin = Math.max(1, fMinDisplay);
-    const safeMax = Math.max(safeMin + 1, fMaxDisplay);
-    const f1 = SPEC_FREQ_SEGMENT_1_HZ;   // 15 kHz
-    const f2 = SPEC_FREQ_SEGMENT_2_HZ;   // 20 kHz
-    const wA = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_A));
-    const wB = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_B));
-    const wC = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_C));
-    // Normalize shares to sum to 1
-    const wSum = wA + wB + wC;
-    const nA = wA / wSum;
-    const nB = wB / wSum;
-    const nC = wC / wSum;
-    const WA = safeW * nA;
-    const WB = safeW * nB;
-    const WC = safeW * nC;
+    const nyquist = sampleRateHz * 0.5;
+    const fSplit = SPEC_FREQ_SPLIT_HZ;
+    const fTop = Math.min(SPEC_FREQ_TOP_HZ, nyquist);
+    const safeMax = Math.max(safeMin + 1, Math.min(fMaxDisplay, fTop));
+    const hiWidthFrac = Math.max(0.12, Math.min(0.25, SPEC_HI_WIDTH_FRAC));
+    const wHi = safeW * hiWidthFrac;
+    const wLo = safeW - wHi;
     const fftSize = binCount * 2;
 
+    // Piecewise log10 mapping: x -> freq
     const xToFreq = (x) => {
       if (safeW <= 1) return safeMin;
       const xClamped = Math.max(0, Math.min(safeW, x));
       let freq;
-      // Segment 1: log map [safeMin..f1] -> [0..WA]
-      if (xClamped <= WA) {
-        const t = Math.max(0, Math.min(1, WA <= 0 ? 0 : (xClamped / Math.max(1e-6, WA))));
-        freq = Math.exp(Math.log(safeMin) + t * (Math.log(f1) - Math.log(safeMin)));
+      
+      // Low segment: log10 map [safeMin..fSplit] -> [0..wLo]
+      if (xClamped <= wLo) {
+        const t = Math.max(0, Math.min(1, wLo <= 0 ? 0 : (xClamped / Math.max(1e-6, wLo))));
+        const logMin = Math.log10(safeMin);
+        const logSplit = Math.log10(fSplit);
+        freq = Math.pow(10, logMin + t * (logSplit - logMin));
       }
-      // Segment 2: linear map [f1..f2] -> [WA..WA+WB]
-      else if (xClamped <= WA + WB) {
-        const t = Math.max(0, Math.min(1, WB <= 0 ? 0 : ((xClamped - WA) / Math.max(1e-6, WB))));
-        freq = f1 + t * (f2 - f1);
-      }
-      // Segment 3: linear map [f2..safeMax] -> [WA+WB..safeW]
+      // High segment: log10 map [fSplit..safeMax] -> [wLo..safeW]
       else {
-        const t = Math.max(0, Math.min(1, WC <= 0 ? 0 : ((xClamped - WA - WB) / Math.max(1e-6, WC))));
-        freq = f2 + t * (safeMax - f2);
+        const t = Math.max(0, Math.min(1, wHi <= 0 ? 0 : ((xClamped - wLo) / Math.max(1e-6, wHi))));
+        const logSplit = Math.log10(fSplit);
+        const logMax = Math.log10(safeMax);
+        freq = Math.pow(10, logSplit + t * (logMax - logSplit));
       }
+      
       // Clamp to physically realizable frequency (Nyquist limit)
-      const nyquist = sampleRateHz * 0.5;
       return Math.min(freq, nyquist);
     };
 
@@ -2065,11 +2079,10 @@
       sampleRateHz,
       fMinDisplay: safeMin,
       fMaxDisplay: safeMax,
-      f1,
-      f2,
-      WA,
-      WB,
-      WC,
+      fSplit,
+      fTop,
+      wLo,
+      wHi,
       binCount,
       centerFreq,
       binStart,
@@ -2193,6 +2206,7 @@
     const graphH = h - axisH;
     const colors = THEME.colors;
     const t = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+    const tMs = typeof performance !== 'undefined' ? performance.now() : 0;
     const leftPad = SPEC_LEFT_PAD;
     const rightGutter = SPEC_RIGHT_GUTTER;
     const plotX0 = leftPad;
@@ -2224,6 +2238,41 @@
       specFloatBins.fill(dbMin);
     }
     
+    // Compute broadband RMS for silence detection
+    let sumLin = 0;
+    let countBins = 0;
+    for (let i = 0; i < binCount; i++) {
+      const db = specFloatBins[i];
+      if (Number.isFinite(db)) {
+        sumLin += Math.pow(10, db / 20);
+        countBins++;
+      }
+    }
+    let rmsDb = dbMin;
+    if (countBins > 0) {
+      const avgLin = sumLin / countBins;
+      rmsDb = 20 * Math.log10(Math.max(avgLin, 1e-12));
+    }
+    specLastRmsDb = rmsDb;
+    
+    // Silence gate logic with hold time
+    const wasActive = specSilenceStartTime === null;
+    const isSilentNow = rmsDb < SPEC_SILENCE_DB;
+    
+    if (isSilentNow) {
+      // First frame of silence: set start time
+      if (specSilenceStartTime === null) {
+        specSilenceStartTime = tMs;
+      }
+      // After hold period, enable fast decay
+      const timeSinceSilence = tMs - specSilenceStartTime;
+      specIsSilent = timeSinceSilence > SPEC_HOLD_MS;
+    } else {
+      // Signal returned above threshold: exit silence immediately
+      specSilenceStartTime = null;
+      specIsSilent = false;
+    }
+    
     // EMA smoothing buffers
     if (!specColumnSmooth || specColumnSmooth.length !== plotW) {
       specColumnSmooth = new Float32Array(plotW);
@@ -2253,52 +2302,44 @@
       specColumnMapCache = buildSpecColumnMap(plotW, sr, minHz, maxHz, specFloatBins.length);
     }
     
-    const f1 = SPEC_FREQ_SEGMENT_1_HZ;   // 15 kHz
-    const f2 = SPEC_FREQ_SEGMENT_2_HZ;   // 20 kHz
-    const wA = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_A));
-    const wB = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_B));
-    const wC = Math.max(0.01, Math.min(0.95, SPEC_WIDTH_SHARE_C));
-    const wSum = wA + wB + wC;
-    const nA = wA / wSum;
-    const nB = wB / wSum;
-    const nC = wC / wSum;
-    const WA = plotW * nA;
-    const WB = plotW * nB;
-    const WC = plotW * nC;
+    // Piecewise log10 mapping for drawing
+    const fSplit = SPEC_FREQ_SPLIT_HZ;
+    const fTop = Math.min(SPEC_FREQ_TOP_HZ, nyquist);
+    const hiWidthFrac = Math.max(0.12, Math.min(0.25, SPEC_HI_WIDTH_FRAC));
+    const wHi = plotW * hiWidthFrac;
+    const wLo = plotW - wHi;
 
     const freqToPlotX = (freq) => {
       const f = clamp(freq, minHz, maxHz);
-      // Segment 1: log map [minHz..f1] -> [plotX0..plotX0+WA]
-      if (f <= f1) {
-        const t = (Math.log(f) - Math.log(minHz)) / (Math.log(f1) - Math.log(minHz));
-        return plotX0 + clamp01(t) * WA;
+      // Low segment: log10 [minHz..fSplit] -> [plotX0..plotX0+wLo]
+      if (f <= fSplit) {
+        const logMin = Math.log10(minHz);
+        const logSplit = Math.log10(fSplit);
+        const t = (Math.log10(f) - logMin) / (logSplit - logMin);
+        return plotX0 + clamp01(t) * wLo;
       }
-      // Segment 2: linear map [f1..f2] -> [plotX0+WA..plotX0+WA+WB]
-      if (f <= f2) {
-        const t = (f - f1) / (f2 - f1);
-        return plotX0 + WA + clamp01(t) * WB;
-      }
-      // Segment 3: linear map [f2..maxHz] -> [plotX0+WA+WB..plotX1]
-      const t = (f - f2) / (maxHz - f2);
-      return plotX0 + WA + WB + clamp01(t) * WC;
+      // High segment: log10 [fSplit..fTop] -> [plotX0+wLo..plotX1]
+      const logSplit = Math.log10(fSplit);
+      const logTop = Math.log10(fTop);
+      const t = (Math.log10(f) - logSplit) / (logTop - logSplit);
+      return plotX0 + wLo + clamp01(t) * wHi;
     };
 
     const plotXToFreq = (x) => {
       const xClamped = clamp(x, plotX0, plotX1);
       const xRel = xClamped - plotX0;
-      // Segment 1: log inverse [plotX0..plotX0+WA] -> [minHz..f1]
-      if (xRel <= WA) {
-        const t = clamp01(WA <= 0 ? 0 : (xRel / Math.max(1e-6, WA)));
-        return Math.exp(Math.log(minHz) + t * (Math.log(f1) - Math.log(minHz)));
+      // Low segment: inverse log10 [plotX0..plotX0+wLo] -> [minHz..fSplit]
+      if (xRel <= wLo) {
+        const t = clamp01(wLo <= 0 ? 0 : (xRel / Math.max(1e-6, wLo)));
+        const logMin = Math.log10(minHz);
+        const logSplit = Math.log10(fSplit);
+        return Math.pow(10, logMin + t * (logSplit - logMin));
       }
-      // Segment 2: linear inverse [plotX0+WA..plotX0+WA+WB] -> [f1..f2]
-      if (xRel <= WA + WB) {
-        const t = clamp01(WB <= 0 ? 0 : ((xRel - WA) / Math.max(1e-6, WB)));
-        return f1 + t * (f2 - f1);
-      }
-      // Segment 3: linear inverse [plotX0+WA+WB..plotX1] -> [f2..maxHz]
-      const t = clamp01(WC <= 0 ? 0 : ((xRel - WA - WB) / Math.max(1e-6, WC)));
-      return f2 + t * (maxHz - f2);
+      // High segment: inverse log10 [plotX0+wLo..plotX1] -> [fSplit..fTop]
+      const t = clamp01(wHi <= 0 ? 0 : ((xRel - wLo) / Math.max(1e-6, wHi)));
+      const logSplit = Math.log10(fSplit);
+      const logTop = Math.log10(fTop);
+      return Math.pow(10, logSplit + t * (logTop - logSplit));
     };
     
     const dbToYNorm = (db) => {
@@ -2402,17 +2443,40 @@
     }
 
     // Time-domain smoothing: live EMA + slow average curve EMA
+    // When silent, use fast decay; otherwise use normal EMA
+    const dt = Math.max(1, tMs - specLastFrameTimeMs) / 1000;  // Delta time in seconds
+    const decayAlpha = 1 - Math.exp(-dt / (SPEC_RELEASE_MS / 1000));  // Exponential decay rate when silent
+    
     for (let x = 0; x < plotW; x++) {
       const target = specOctaveSmoothed[x];
-      specLiveSpectrum[x] = specLiveSpectrum[x] + SPEC_EMA_ALPHA * (target - specLiveSpectrum[x]);
+      
+      if (specIsSilent) {
+        // Silence decay: quickly drop toward dbMin without freezing at last value
+        specLiveSpectrum[x] = specLiveSpectrum[x] + decayAlpha * (dbMin - specLiveSpectrum[x]);
+        // Clamp values within 1dB of floor to exactly floor to remove banding
+        if (specLiveSpectrum[x] > dbMin - 1.0) {
+          specLiveSpectrum[x] = dbMin;
+        }
+        // Clamp to valid range
+        specLiveSpectrum[x] = clamp(specLiveSpectrum[x], dbMin, dbMax);
+      } else {
+        // Normal mode: standard EMA smoothing
+        specLiveSpectrum[x] = specLiveSpectrum[x] + SPEC_EMA_ALPHA * (target - specLiveSpectrum[x]);
+      }
+      
       specAvgSpectrum[x] = specAvgSpectrum[x] + SPEC_AVG_ALPHA * (specLiveSpectrum[x] - specAvgSpectrum[x]);
     }
+    
+    // Update frame time for next iteration
+    specLastFrameTimeMs = tMs;
 
     for (let x = 0; x < plotW; x++) {
       const drawDb = SPEC_VIEW_MODE === 'live' ? specLiveSpectrum[x] : specAvgSpectrum[x];
       
       // Floor gate: skip drawing if below threshold (prevents noise/smoothing artifacts)
-      if (!Number.isFinite(drawDb) || drawDb <= drawFloorGateDb) {
+      // During silence, only draw if signal is above floor + threshold
+      const silenceDrawThreshold = specIsSilent ? (dbMin + SPEC_DECAY_DRAW_THRESHOLD) : drawFloorGateDb;
+      if (!Number.isFinite(drawDb) || drawDb <= silenceDrawThreshold) {
         continue;  // Don't draw anything for this column
       }
       
@@ -2421,15 +2485,14 @@
       const y = graphH - barH;
       const xPix = plotX0 + x;
       
-      // Keep existing color style (green->cyan with level-based lightness)
-      const hue = 140 + 60 * (x / Math.max(1, plotW - 1));
-      const light = 20 + 45 * norm;
-      specGraphCtx.fillStyle = `hsl(${hue} 95% ${light}%)`;
+      // Theme-based color scheme
+      const posNorm = x / Math.max(1, plotW - 1);
+      specGraphCtx.fillStyle = UIHelpers.getSpectroColor(posNorm, norm);
       specGraphCtx.fillRect(xPix, y, 1, barH);
     }
     
-    // Clear dead zone above maxHz (no real FFT data beyond Nyquist)
-    const xMaxHz = freqToPlotX(maxHz);
+    // Clear dead zone above fTop (no mapped data beyond 20kHz/Nyquist)
+    const xMaxHz = freqToPlotX(fTop);
     if (xMaxHz < plotX1) {
       specGraphCtx.save();
       specGraphCtx.globalCompositeOperation = 'source-over';
@@ -2445,28 +2508,20 @@
     specGraphCtx.textAlign = 'center';
     specGraphCtx.textBaseline = 'top';
     
-    // Major tick labels (dim 25k+ as it's de-emphasized)
+    // Major tick labels (capped at fTop = 20kHz)
     const majorTicks = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 25000, 30000];
     for (let freq of majorTicks) {
-      if (freq > maxHz) continue;
+      if (freq > fTop) continue;
       const xPos = freqToPlotX(freq);
       const label = freq >= 1000 ? (freq % 1000 === 0 ? (freq / 1000).toFixed(0) + 'k' : (freq / 1000).toFixed(1) + 'k') : String(freq);
-      // Dim labels for 25k+ (de-emphasized band)
-      if (freq >= 25000) {
-        specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.5)`;
-      } else {
-        specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
-      }
       specGraphCtx.fillText(label, xPos, graphH + 5);
     }
-    // Reset fill color for vertical tick lines
-    specGraphCtx.fillStyle = `rgba(${lbr},${lbg},${lbb},0.9)`;
     
     // Draw subtle vertical tick lines at major frequencies (plot only)
     specGraphCtx.strokeStyle = `rgba(${gr},${gg},${gb},0.15)`;
     specGraphCtx.lineWidth = 0.5;
     for (let freq of majorTicks) {
-      if (freq > maxHz) continue;
+      if (freq > fTop) continue;
       const xPos = freqToPlotX(freq);
       specGraphCtx.beginPath();
       specGraphCtx.moveTo(xPos, graphH);
@@ -3021,8 +3076,28 @@
   function loadSettings(){
     try{
       const raw = localStorage.getItem('qyjo_settings');
-      return raw ? JSON.parse(raw) : {theme:'ps2', autoStart:false};
-    }catch(e){ return {theme:'ps2', autoStart:false}; }
+      return raw ? JSON.parse(raw) : {
+        theme:'ps2', 
+        autoStart:false,
+        vsStyle: 'phosphor',
+        vsNormalize: true,
+        vsRotate: 0,
+        goniMode: 'PHOSPHOR',
+        goniMapping: 'LR',
+        goniRotate: 0
+      };
+    }catch(e){ 
+      return {
+        theme:'ps2', 
+        autoStart:false,
+        vsStyle: 'phosphor',
+        vsNormalize: true,
+        vsRotate: 0,
+        goniMode: 'PHOSPHOR',
+        goniMapping: 'LR',
+        goniRotate: 0
+      }; 
+    }
   }
 
   function saveSettings(s){
@@ -3036,6 +3111,28 @@
   themeSelect.value = initialSettings.theme || 'ps2';
   autoStartEl.checked = !!initialSettings.autoStart;
   THEME.applyPalette(themeSelect.value);
+  
+  // Load visualization settings
+  if(vsStyleEl) vsStyleEl.value = initialSettings.vsStyle || 'phosphor';
+  if(vsNormalizeEl) vsNormalizeEl.checked = initialSettings.vsNormalize !== false;
+  if(vsRotateEl) {
+    vsRotateEl.value = initialSettings.vsRotate || 0;
+    vsRotateRad = ((initialSettings.vsRotate || 0) * Math.PI) / 180;
+  }
+  const goniModeSelect = document.getElementById('goniModeSelect');
+  const goniMappingSelect = document.getElementById('goniMappingSelect');
+  const goniRotateSelect = document.getElementById('goniRotate');
+  if(goniModeSelect) goniModeSelect.value = initialSettings.goniMode || 'PHOSPHOR';
+  if(goniMappingSelect) goniMappingSelect.value = initialSettings.goniMapping || 'LR';
+  if(goniRotateSelect) goniRotateSelect.value = initialSettings.goniRotate || 0;
+  
+  // Apply visualization settings to components
+  if(goniometerPanel){
+    goniometerPanel.setMode(initialSettings.goniMode || 'PHOSPHOR');
+    goniometerPanel.setMapping(initialSettings.goniMapping || 'LR');
+    goniometerPanel.setRotation(initialSettings.goniRotate || 0);
+  }
+  vsStyle = initialSettings.vsStyle || 'phosphor';
 
   // Enable glitter effect if initial theme is glitter
   if(glitterLayer && THEME.currentPalette === 'glitter'){
