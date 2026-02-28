@@ -17,6 +17,10 @@ class GoniometerPanel {
     this.showGrid = true;
     this.showAxes = true;
     
+    // Rotation control
+    this.rotationDegrees = 0;
+    this.rotationRad = 0;
+    
     // Heatmap bin dimensions (preallocated)
     this.heatmapResolution = 256; // bins per axis
     this.heatmapBins = new Uint8Array(this.heatmapResolution * this.heatmapResolution);
@@ -114,6 +118,14 @@ class GoniometerPanel {
     this.cachedColors = parsed;
     this.themeVersion = THEME.version;
     return parsed;
+  }
+  
+  /**
+   * Set rotation in degrees (animated parameter)
+   */
+  setRotation(degrees) {
+    this.rotationDegrees = degrees || 0;
+    this.rotationRad = (this.rotationDegrees * Math.PI) / 180;
   }
   
   /**
@@ -275,16 +287,24 @@ class GoniometerPanel {
     this.pointCount = 0;
     const maxR = Math.min(cx, cy) - 20;
     
+    // Precompute rotation matrix components
+    const cosR = Math.cos(this.rotationRad);
+    const sinR = Math.sin(this.rotationRad);
+    
     for (let i = 0; i < len && this.pointCount < this.maxPoints; i += 4) {
-      const x = mapped.x[i];
-      const y = mapped.y[i];
+      let x = mapped.x[i];
+      let y = mapped.y[i];
       const dist = Math.hypot(x, y);
       
       if (dist > 0.01) { // Skip near-zero samples
+        // Apply rotation using rotation matrix
+        const xr = x * cosR - y * sinR;
+        const yr = x * sinR + y * cosR;
+        
         // Normalize to unit circle, then scale to canvas
         const norm = dist > 1.0 ? 1.0 / dist : 1.0;
-        const px = cx + x * norm * maxR;
-        const py = cy + y * norm * maxR;
+        const px = cx + xr * norm * maxR;
+        const py = cy + yr * norm * maxR;
         
         this.pointsX[this.pointCount] = px;
         this.pointsY[this.pointCount] = py;
@@ -477,7 +497,7 @@ class GoniometerPanel {
   }
   
   /**
-   * L/R stereo separation mode: separate traces in accent colors
+   * L/R stereo separation mode: separate traces in accent colors (with rotation)
    */
   _renderStereo(L, R, len, cx, cy, colors, mapped) {
     const w = this.canvas.clientWidth;
@@ -500,7 +520,7 @@ class GoniometerPanel {
     for (let i = 0; i < len; i += 8) {
       const val = L[i];
       const norm = Math.max(0, Math.min(1, (val + 1) / 2)); // normalize to 0-1
-      const angle = norm * Math.PI * 2;
+      const angle = norm * Math.PI * 2 + this.rotationRad; // Apply rotation
       const x = cx + Math.cos(angle) * maxR * 0.7;
       const y = cy + Math.sin(angle) * maxR * 0.7;
       if (first) {
@@ -521,7 +541,7 @@ class GoniometerPanel {
     for (let i = 0; i < len; i += 8) {
       const val = R[i];
       const norm = Math.max(0, Math.min(1, (val + 1) / 2));
-      const angle = norm * Math.PI * 2 + Math.PI / 2;
+      const angle = norm * Math.PI * 2 + Math.PI / 2 + this.rotationRad; // Apply rotation
       const x = cx + Math.cos(angle) * maxR * 0.7;
       const y = cy + Math.sin(angle) * maxR * 0.7;
       if (first) {
@@ -608,21 +628,23 @@ class GoniometerPanel {
     const maxR = Math.min(w / 2, h / 2) - 20;
     const [gridr, gridg, gridb] = colors.grid;
     
-    // Mono axis (45°) - brighter
+    // Mono axis (45° + rotation) - brighter
     this.ctx.strokeStyle = `rgba(${gridr},${gridg},${gridb},0.6)`;
     this.ctx.lineWidth = 1.5;
     this.ctx.beginPath();
     const monoLen = maxR * 0.9;
-    this.ctx.moveTo(cx - monoLen / Math.sqrt(2), cy - monoLen / Math.sqrt(2));
-    this.ctx.lineTo(cx + monoLen / Math.sqrt(2), cy + monoLen / Math.sqrt(2));
+    const monoAngle = Math.PI / 4 + this.rotationRad; // 45° + rotation
+    this.ctx.moveTo(cx - monoLen * Math.cos(monoAngle), cy - monoLen * Math.sin(monoAngle));
+    this.ctx.lineTo(cx + monoLen * Math.cos(monoAngle), cy + monoLen * Math.sin(monoAngle));
     this.ctx.stroke();
     
-    // Anti-phase axis (-45°) - faint
+    // Anti-phase axis (-45° + rotation) - faint
     this.ctx.strokeStyle = `rgba(${gridr},${gridg},${gridb},0.2)`;
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
-    this.ctx.moveTo(cx + monoLen / Math.sqrt(2), cy - monoLen / Math.sqrt(2));
-    this.ctx.lineTo(cx - monoLen / Math.sqrt(2), cy + monoLen / Math.sqrt(2));
+    const antiPhaseAngle = -Math.PI / 4 + this.rotationRad; // -45° + rotation
+    this.ctx.moveTo(cx - monoLen * Math.cos(antiPhaseAngle), cy - monoLen * Math.sin(antiPhaseAngle));
+    this.ctx.lineTo(cx + monoLen * Math.cos(antiPhaseAngle), cy + monoLen * Math.sin(antiPhaseAngle));
     this.ctx.stroke();
     
     if (this.showGrid) {

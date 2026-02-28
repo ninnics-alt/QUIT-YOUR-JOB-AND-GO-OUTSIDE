@@ -70,6 +70,7 @@
   if(goniometerPanel){
     const goniModeSelect = document.getElementById('goniModeSelect');
     const goniMappingSelect = document.getElementById('goniMappingSelect');
+    const goniRotateSelect = document.getElementById('goniRotate');
     
     if(goniModeSelect){
       goniModeSelect.addEventListener('change', (e) => {
@@ -80,6 +81,13 @@
     if(goniMappingSelect){
       goniMappingSelect.addEventListener('change', (e) => {
         goniometerPanel.setMapping(e.target.value);
+      });
+    }
+    
+    if(goniRotateSelect){
+      goniRotateSelect.addEventListener('change', (e) => {
+        const deg = parseFloat(e.target.value) || 0;
+        goniometerPanel.setRotation(deg);
       });
     }
   }
@@ -688,6 +696,9 @@
         // Render goniometer with new panel
         if(goniometerPanel){
           try{ 
+            const goniRotateEl = document.getElementById('goniRotate');
+            const goniDeg = goniRotateEl ? (parseFloat(goniRotateEl.value) || 0) : 0;
+            goniometerPanel.setRotation(goniDeg);
             goniometerPanel.render(leftArray, rightArray);
           }catch(e){
             console.error('[Goniometer] Render error:', e);
