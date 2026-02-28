@@ -299,7 +299,7 @@
   // UI display smoothing (for text elements)
   const UI_RMS_TAU = 0.100;
   const UI_PEAK_TAU = 0.050;        // Faster peak detection (50ms vs 120ms)
-  const UI_HOLD_FREEZE = 4.000;     // Hold peak for 4 seconds
+  const UI_HOLD_FREEZE = 2.000;     // Hold peak for 2 seconds
   const UI_HOLD_DECAY_DB_PER_SEC = 6.0;  // Slower decay (6 dB/sec vs 12 dB/sec)
   let uiDisplaySmoothed = {
     rmsDbs: -120,
@@ -901,13 +901,15 @@
           // Only update meters if meterEngine is ready; otherwise show zeros
           if(meterEngine){
             const m = meterEngine.getMetrics();
+            const holdDbForDisplay = isFinite(uiDisplaySmoothed.holdDbfs) ? uiDisplaySmoothed.holdDbfs : -120;
+            const holdLinearForDisplay = Math.pow(10, holdDbForDisplay / 20);
             meterDisplay.updateMeters(
               m.lufsIntegrated,
               m.lufsMomentary,
               m.lufsPeak,
               m.rmsDbfs,
               m.peakLinear,
-              m.peakHoldLinear
+              holdLinearForDisplay
             );
           }else{
             // Show placeholder values while waiting for audio
