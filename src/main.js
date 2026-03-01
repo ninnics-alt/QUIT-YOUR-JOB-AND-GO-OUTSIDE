@@ -119,10 +119,8 @@ function createWindow () {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow = win;
   
-  // Auto-open DevTools in development mode
-  if (!app.isPackaged) {
-    win.webContents.openDevTools({ mode: 'detach' });
-  }
+  // Open DevTools to see console messages (for all modes while debugging)
+  win.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(async () => {
