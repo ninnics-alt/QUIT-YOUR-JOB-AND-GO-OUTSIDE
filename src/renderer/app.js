@@ -1,5 +1,5 @@
 (async function(){
-  const AUTO_DEVTOOLS_LOGGING = false;
+  const AUTO_DEVTOOLS_LOGGING = true;
   if (!AUTO_DEVTOOLS_LOGGING) {
     console.log = () => {};
     console.info = () => {};

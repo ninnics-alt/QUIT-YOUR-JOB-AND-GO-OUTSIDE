@@ -118,6 +118,18 @@ function createWindow () {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow = win;
+  
+  // Add keyboard shortcut to open DevTools (Cmd+Option+I on Mac, F12 elsewhere)
+  // This helps with debugging if needed
+  if (!app.isPackaged) {
+    win.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    // In packaged app, user can press Cmd+Option+I to open DevTools
+    const { globalShortcut } = require('electron');
+    globalShortcut.register('CmdOrCtrl+Alt+I', () => {
+      win.webContents.openDevTools({ mode: 'detach' });
+    });
+  }
 }
 
 app.whenReady().then(() => {
