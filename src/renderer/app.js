@@ -615,6 +615,17 @@
     sampleRate = audioCtx.sampleRate || 48000;
     source = audioCtx.createMediaStreamSource(stream);
 
+    // Ensure audio context is running (macOS often starts suspended)
+    console.log('[Audio] AudioContext state:', audioCtx.state);
+    if (audioCtx.state === 'suspended') {
+      try {
+        await audioCtx.resume();
+        console.log('[Audio] AudioContext resumed from suspended state');
+      } catch (err) {
+        console.error('[Audio] Failed to resume AudioContext:', err);
+      }
+    }
+
     // Expose stream and audioCtx to window for capture functionality
     window.appAudioStream = stream;
     window.appAudioContext = audioCtx;
@@ -778,6 +789,16 @@
       try{
         analyserL.getFloatTimeDomainData(leftArray);
         analyserR.getFloatTimeDomainData(rightArray);
+        
+        // Debug: Check if analyser is actually getting data
+        if (!window._analyserDebugLogged) {
+          const freqData = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(freqData);
+          const nonZeroFreqs = freqData.filter(v => v > 0).length;
+          const maxFreq = Math.max(...freqData);
+          console.log('[Audio] Analyser frequency data - nonZeroCount:', nonZeroFreqs, 'maxValue:', maxFreq, 'analyser state:', analyser.smoothingTimeConstant);
+          window._analyserDebugLogged = true;
+        }
         
         // Debug: Log channel check with first 20 samples
         if (!window._channelSampleDebugLogged && leftArray.length > 0) {
