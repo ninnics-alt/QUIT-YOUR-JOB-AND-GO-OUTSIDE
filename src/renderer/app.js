@@ -719,6 +719,11 @@
     splitter.connect(analyserR, 1);
     kWeightNodeHead = analyser; // point to analyser instead of shelf
     
+    // CRITICAL: Connect to destination so audio actually flows through the graph
+    // (Analyser nodes don't consume signal on their own - they need a sink)
+    analyser.connect(audioCtx.destination);
+    console.log('[Audio] Connected to destination - audio is now flowing');
+    
     // If the input is mono, we can optionally add stereo processing here
     // For now, we'll connect in a way that works with mono input
     // (splitter will duplicate the mono channel to both left/right analysers)
