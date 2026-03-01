@@ -3222,16 +3222,32 @@
   navigator.mediaDevices.ondevicechange = listDevices;
 
   // Save device selection when user changes it
-  deviceSelect.addEventListener('change', () => {
-    const settings = loadSettings();
-    settings.deviceId = deviceSelect.value;
-    saveSettings(settings);
-    console.log('[Audio] Device selection saved:', deviceSelect.value);
-  });
+  if (deviceSelect) {
+    try {
+      deviceSelect.addEventListener('change', () => {
+        const settings = loadSettings();
+        settings.deviceId = deviceSelect.value;
+        saveSettings(settings);
+        console.log('[Audio] Device selection saved:', deviceSelect.value);
+      });
+    } catch (err) {
+      console.error('[Init] Error adding device selection listener:', err);
+    }
+  } else {
+    console.warn('[Init] deviceSelect element not found');
+  }
 
-  startBtn.addEventListener('click', ()=>{
-    if(!audioCtx) start();
-  });
+  if (startBtn) {
+    try {
+      startBtn.addEventListener('click', ()=>{
+        if(!audioCtx) start();
+      });
+    } catch (err) {
+      console.error('[Init] Error adding start button listener:', err);
+    }
+  } else {
+    console.warn('[Init] startBtn element not found');
+  }
 
   const logDebugBtn = document.getElementById('logDebugInfo');
   if(logDebugBtn) logDebugBtn.addEventListener('click', ()=>{
@@ -3425,4 +3441,7 @@
     // attempt to start; browsers may block getUserMedia without gesture
     start().catch(()=>{});
   }
-})();
+})().catch(err => {
+  console.error('[Init] Fatal initialization error:', err);
+  alert('App initialization failed: ' + err.message);
+});
