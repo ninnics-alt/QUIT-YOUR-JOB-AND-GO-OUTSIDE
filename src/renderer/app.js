@@ -590,6 +590,7 @@
           trackDeviceId: audioTracks[0].getSettings?.().deviceId
         });
         console.log('[Audio] Actual track being used:', audioTracks[0].label);
+      }
     }catch(e){
       // try fallback: attempt default device if a specific device failed
       console.error('[Audio] Primary getUserMedia failed:', e.name, e.message);
