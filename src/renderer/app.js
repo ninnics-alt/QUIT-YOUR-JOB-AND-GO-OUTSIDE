@@ -1,4 +1,5 @@
 (async function(){
+  console.log('[App] IIFE starting...');
   const AUTO_DEVTOOLS_LOGGING = true;
   if (!AUTO_DEVTOOLS_LOGGING) {
     console.log = () => {};
@@ -6,11 +7,13 @@
     console.debug = () => {};
   }
 
+  console.log('[App] DOM access starting...');
   // Startup info
   const isPackaged = window.electron && window.electron.isDev === false;
   console.log('[Analyzer] Starting in', isPackaged ? 'PRODUCTION' : 'DEVELOPMENT', 'mode');
 
   const deviceSelect = document.getElementById('deviceSelect');
+  console.log('[App] DOM elements loaded, deviceSelect:', !!deviceSelect);
   const startBtn = document.getElementById('start');
   const themeSelect = document.getElementById('themeSelect');
   const autoStartEl = document.getElementById('autoStart');
