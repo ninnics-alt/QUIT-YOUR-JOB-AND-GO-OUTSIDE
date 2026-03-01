@@ -121,6 +121,28 @@ function createWindow () {
 }
 
 app.whenReady().then(() => {
+  // Set app icon on macOS dock (use PNG as fallback since ICNS conversion is tricky)
+  if (process.platform === 'darwin') {
+    try {
+      // Try ICNS first
+      const icnsPath = path.join(__dirname, '..', 'assets', 'icon.icns');
+      if (fs.existsSync(icnsPath)) {
+        // Verify it's a real ICNS file, not a PNG renamed
+        const header = fs.readFileSync(icnsPath, { end: 3 });
+        if (header.toString('ascii') === 'icns') {
+          app.dock.setIcon(icnsPath);
+        } else {
+          // Fall back to PNG
+          app.dock.setIcon(path.join(__dirname, '..', 'assets', 'icon.png'));
+        }
+      } else {
+        app.dock.setIcon(path.join(__dirname, '..', 'assets', 'icon.png'));
+      }
+    } catch (err) {
+      console.error('Failed to set dock icon:', err);
+    }
+  }
+  
   createWindow();
 
   app.on('activate', function () {
