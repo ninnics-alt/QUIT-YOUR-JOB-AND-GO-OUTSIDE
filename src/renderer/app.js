@@ -529,7 +529,10 @@
 
   async function start(){
     const deviceId = deviceSelect.value || undefined;
+    const selectedDevice = Array.from(deviceSelect.options).find(o => o.value === deviceId);
     console.log('[Audio] Starting stream with device:', deviceId || 'default');
+    console.log('[Audio] Selected device label:', selectedDevice?.textContent || 'system default');
+    console.log('[Audio] Available input devices:', Array.from(deviceSelect.options).map((o, i) => `${i}: ${o.textContent} (id: ${o.value})`));
     
     // Request microphone permission explicitly (especially important on macOS)
     if (window.electron && window.electron.requestMicrophonePermission) {
@@ -579,9 +582,11 @@
         console.log('[Audio] Stream acquired with settings:', {
           channelCount: settings?.channelCount,
           sampleRate: settings?.sampleRate,
-          trackLabel: audioTracks[0].label
+          trackLabel: audioTracks[0].label,
+          trackGroupId: audioTracks[0].groupId,
+          trackDeviceId: audioTracks[0].getSettings?.().deviceId
         });
-      }
+        console.log('[Audio] Actual track being used:', audioTracks[0].label);
     }catch(e){
       // try fallback: attempt default device if a specific device failed
       console.error('[Audio] Primary getUserMedia failed:', e.name, e.message);
@@ -3215,6 +3220,14 @@
 
   await listDevices();
   navigator.mediaDevices.ondevicechange = listDevices;
+
+  // Save device selection when user changes it
+  deviceSelect.addEventListener('change', () => {
+    const settings = loadSettings();
+    settings.deviceId = deviceSelect.value;
+    saveSettings(settings);
+    console.log('[Audio] Device selection saved:', deviceSelect.value);
+  });
 
   startBtn.addEventListener('click', ()=>{
     if(!audioCtx) start();
