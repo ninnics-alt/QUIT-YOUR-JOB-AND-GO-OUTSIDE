@@ -2825,11 +2825,16 @@
     }catch(e){ console.error(e); }
   });
 
-  // wire DevTools button
+  // wire DevTools button (only in development)
   const devBtn = document.getElementById('openDevtools');
-  devBtn.addEventListener('click', ()=>{
-    if(window.electron && window.electron.openDevTools) window.electron.openDevTools();
-  });
+  if (!window.electron.isDev) {
+    // Hide DevTools button in production builds
+    devBtn.style.display = 'none';
+  } else {
+    devBtn.addEventListener('click', ()=>{
+      if(window.electron && window.electron.openDevTools) window.electron.openDevTools();
+    });
+  }
 
   // Device panel open/close
   const openDeviceBtn = document.getElementById('openDevicePanel');

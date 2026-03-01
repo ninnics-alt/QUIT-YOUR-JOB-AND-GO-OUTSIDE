@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
+  isDev: ipcRenderer.sendSync('get-isDev'),
   openDevTools: () => ipcRenderer.send('open-devtools'),
   logDevices: (devices) => ipcRenderer.send('log-devices', devices),
   minimodeEnable: (payload) => ipcRenderer.invoke('minimode:enable', payload),

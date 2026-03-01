@@ -155,6 +155,10 @@ app.on('window-all-closed', function () {
 });
 
 // IPC handlers
+ipcMain.on('get-isDev', (event) => {
+  event.returnValue = !app.isPackaged;
+});
+
 ipcMain.on('open-devtools', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) win.webContents.openDevTools({ mode: 'detach' });
