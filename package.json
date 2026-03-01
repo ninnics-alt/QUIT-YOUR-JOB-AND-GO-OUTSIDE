@@ -2,16 +2,54 @@
   "name": "quit-your-job-and-go-outside",
   "productName": "QUIT YOUR JOB AND GO OUTSIDE",
   "version": "0.1.0",
+  "description": "Real-time EBU R128 loudness analyzer with audio metering and visualization",
+  "author": "You",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "build:wasm": "emcc src/wasm/wrapper.c -I libebur128/include -L libebur128/.libs -lebur128 -O3 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"cwrap\"]' -s EXPORTED_FUNCTIONS='[\"_eb_init\",\"_eb_add_samples\",\"_eb_get_i_loudness\",\"_eb_reset\"]' -o src/wasm/ebur128.js",
     "package:mac:x64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=x64 --overwrite --out=dist",
-    "package:mac:arm64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=arm64 --overwrite --out=dist"
+    "package:mac:arm64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=arm64 --overwrite --out=dist",
+    "build": "electron-builder --mac dmg --publish never"
   },
   "devDependencies": {
     "canvas": "^3.2.1",
     "electron": "^26.0.0",
+    "electron-builder": "^26.8.1",
     "electron-packager": "^16.0.0"
+  },
+  "build": {
+    "appId": "com.quitjob.analyzer",
+    "productName": "QUIT YOUR JOB AND GO OUTSIDE",
+    "files": [
+      "src/**",
+      "assets/**",
+      "node_modules/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.png",
+      "artifactName": "${productName}-${version}.${ext}",
+      "category": "public.app-category.utilities"
+    },
+    "dmg": {
+      "background": null,
+      "contents": [
+        {
+          "x": 110,
+          "y": 150,
+          "type": "file"
+        },
+        {
+          "x": 240,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   }
 }
