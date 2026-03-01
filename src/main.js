@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -119,16 +119,9 @@ function createWindow () {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow = win;
   
-  // Add keyboard shortcut to open DevTools (Cmd+Option+I on Mac, F12 elsewhere)
-  // This helps with debugging if needed
+  // Auto-open DevTools in development mode
   if (!app.isPackaged) {
     win.webContents.openDevTools({ mode: 'detach' });
-  } else {
-    // In packaged app, user can press Cmd+Option+I to open DevTools
-    const { globalShortcut } = require('electron');
-    globalShortcut.register('CmdOrCtrl+Alt+I', () => {
-      win.webContents.openDevTools({ mode: 'detach' });
-    });
   }
 }
 
@@ -156,6 +149,15 @@ app.whenReady().then(() => {
   }
   
   createWindow();
+  
+  // Register keyboard shortcut to open DevTools in packaged app (Cmd+Option+I)
+  if (app.isPackaged) {
+    globalShortcut.register('CmdOrCtrl+Alt+I', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+      }
+    });
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

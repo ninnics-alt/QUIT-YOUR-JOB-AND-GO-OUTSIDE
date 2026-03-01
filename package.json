@@ -33,7 +33,12 @@
       ],
       "icon": "assets/icon.png",
       "artifactName": "${productName}-${version}.${ext}",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to analyze audio levels and record clips.",
+        "NSDataSensitivityDescription": "Audio data is processed locally on your computer only.",
+        "NSCameraUseContinuityCameraDeviceType": false
+      }
     },
     "dmg": {
       "background": null,
