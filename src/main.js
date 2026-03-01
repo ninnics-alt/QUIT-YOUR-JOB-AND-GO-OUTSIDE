@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, globalShortcut, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -150,14 +150,17 @@ app.whenReady().then(() => {
   
   createWindow();
   
-  // Register keyboard shortcut to open DevTools in packaged app (Cmd+Option+I)
-  if (app.isPackaged) {
-    globalShortcut.register('CmdOrCtrl+Alt+I', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.openDevTools({ mode: 'detach' });
-      }
-    });
-  }
+  console.log('[Main] App is packaged:', app.isPackaged);
+  console.log('[Main] Platform:', process.platform);
+  
+  // Register keyboard shortcut to open DevTools (Cmd+Option+I)
+  const shortcutRegistered = globalShortcut.register('CmdOrCtrl+Alt+I', () => {
+    console.log('[Main] Cmd+Alt+I pressed');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+  console.log('[Main] DevTools shortcut registered:', shortcutRegistered);
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

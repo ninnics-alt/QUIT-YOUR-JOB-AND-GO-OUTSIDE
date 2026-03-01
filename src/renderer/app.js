@@ -538,6 +538,7 @@
 
   async function start(){
     const deviceId = deviceSelect.value || undefined;
+    console.log('[Audio] Starting stream with device:', deviceId || 'default');
     try{
       // Request stereo audio with optimal constraints
       let constraints;
@@ -573,7 +574,8 @@
       }
     }catch(e){
       // try fallback: attempt default device if a specific device failed
-      console.warn('getUserMedia failed for selected device:', e);
+      console.error('[Audio] Primary getUserMedia failed:', e.name, e.message);
+      console.error('[Audio] Error code:', e.name);
       try{
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -592,7 +594,9 @@
           });
         }
       }catch(err){
-        alert('Could not open audio device: ' + err.message);
+        console.error('[Audio] Final error:', err.name, err.message);
+        console.error('[Audio] Error details:', err);
+        alert('Could not open audio device: ' + err.message + '\n\nMake sure you:\n1. Granted microphone permission\n2. No other app is using the microphone');
         return;
       }
     }
