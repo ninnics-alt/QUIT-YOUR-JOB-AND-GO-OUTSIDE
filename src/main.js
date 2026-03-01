@@ -125,7 +125,17 @@ function createWindow () {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Request microphone permission on startup (macOS)
+  if (process.platform === 'darwin') {
+    try {
+      const micStatus = await systemPreferences.askForMediaAccess('microphone');
+      console.log('[Main] Startup microphone permission requested:', micStatus);
+    } catch (err) {
+      console.error('[Main] Startup microphone permission error:', err);
+    }
+  }
+  
   // Set app icon on macOS dock (use PNG as fallback since ICNS conversion is tricky)
   if (process.platform === 'darwin') {
     try {

@@ -5,15 +5,12 @@
 
 class MeterDisplay {
   constructor(canvasId) {
-    console.log('[METERS] MeterDisplay constructor called with canvasId:', canvasId);
     this.canvas = document.getElementById(canvasId);
-    console.log('[METERS] Canvas element:', this.canvas);
     if (!this.canvas) {
       console.error('[METERS] Canvas element not found:', canvasId);
       return;
     }
     this.ctx = this.canvas.getContext('2d');
-    console.log('[METERS] Canvas ready, size:', this.canvas.width, 'x', this.canvas.height);
 
     // Data
     this.lufsIntegrated = 0;
@@ -29,7 +26,6 @@ class MeterDisplay {
   onResize(w, h) {
     // Called when canvas is resized
     // No need to store dimensions - we'll read them fresh each render
-    console.log('[MeterDisplay] Resized to:', w, 'x', h);
   }
 
   updateMeters(integrated, momentary, peak, rms, peakLinear, peakHold) {
@@ -42,7 +38,6 @@ class MeterDisplay {
   }
 
   render() {
-    console.log('[METERS] render() called');
     if (!this.ctx) return;
     
     // Use current canvas client dimensions (CSS pixels)
@@ -50,9 +45,8 @@ class MeterDisplay {
     const h = this.canvas.clientHeight;
     const colors = THEME.colors;
     
-    // Get theme-specific fonts (direct access to invoke getters)
+    // Get theme-specific fonts
     const fonts = THEME.fonts;
-    console.log('[METERS] Theme:', THEME.currentPalette, 'sansLarge font:', fonts.sansLarge);
     
     // Background
     this.ctx.fillStyle = colors.bgPrimary;

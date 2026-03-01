@@ -534,15 +534,19 @@
     // Request microphone permission explicitly (especially important on macOS)
     if (window.electron && window.electron.requestMicrophonePermission) {
       try {
+        console.log('[Audio] Requesting microphone permission...');
         const permResult = await window.electron.requestMicrophonePermission();
         console.log('[Audio] Permission result:', permResult);
         if (!permResult.granted && permResult.error) {
-          alert('Microphone permission denied. Please grant permission in System Preferences.');
+          console.error('[Audio] Permission was denied');
+          alert('Microphone permission denied. Please grant permission in System Preferences > Security & Privacy > Microphone');
           return;
         }
       } catch (err) {
         console.error('[Audio] Permission request failed:', err);
       }
+    } else {
+      console.warn('[Audio] electron.requestMicrophonePermission not available');
     }
     
     try{
