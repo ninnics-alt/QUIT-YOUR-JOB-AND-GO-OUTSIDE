@@ -6,6 +6,10 @@
     console.debug = () => {};
   }
 
+  // Startup info
+  const isPackaged = window.electron && window.electron.isDev === false;
+  console.log('[Analyzer] Starting in', isPackaged ? 'PRODUCTION' : 'DEVELOPMENT', 'mode');
+
   const deviceSelect = document.getElementById('deviceSelect');
   const startBtn = document.getElementById('start');
   const themeSelect = document.getElementById('themeSelect');
@@ -182,11 +186,7 @@
   const glitterCanvas = document.getElementById('glitterCanvas');
   let glitterLayer = null;
   if(glitterCanvas && window.GlitterLayer){
-    console.log('[Glitter] Canvas element:', glitterCanvas);
-    console.log('[Glitter] Canvas parent:', glitterCanvas.parentElement.tagName);
-    console.log('[Glitter] Canvas classList before:', glitterCanvas.className);
     glitterLayer = new window.GlitterLayer(glitterCanvas);
-    console.log('[Glitter] Layer initialized:', glitterLayer);
     
     // Start independent animation loop for glitter (runs even without audio)
     let lastGlitterTime = performance.now();
@@ -285,13 +285,10 @@
     // Enable/disable glitter effect based on theme
     if(glitterLayer){
       const isGlitterTheme = (THEME.currentPalette === 'glitter');
-      console.log('[Glitter] Theme changed - palette:', THEME.currentPalette, 'isGlitter:', isGlitterTheme);
       if(isGlitterTheme){
         glitterLayer.start();
-        console.log('[Glitter] Started, isActive:', glitterLayer.isActive);
       }else{
         glitterLayer.stop();
-        console.log('[Glitter] Stopped');
       }
     }
     
@@ -312,7 +309,6 @@
   const glitterResizeObserver = setupCanvasResizeObserver(glitterCanvas, (w, h) => {
     // Only resize if canvas is actually visible (has active class)
     if(glitterCanvas && glitterCanvas.classList.contains('active')){
-      console.log('[Glitter] Canvas resized to', w, 'x', h, 'logical pixels');
       if(glitterLayer && glitterLayer.resize) {
         glitterLayer.resize(w, h);
       }
@@ -342,10 +338,6 @@
     glitterCanvas.style.left = '0';
     glitterCanvas.style.pointerEvents = 'none';
     glitterCanvas.style.zIndex = '0';
-    
-    console.log('[Glitter] Initial canvas size set to', glitterCanvas.width, 'x', glitterCanvas.height, 'physical pixels');
-    console.log('[Glitter] CSS size set to', w, 'x', h, 'logical pixels, top offset:', headerRect.height);
-    console.log('[Glitter] Canvas in DOM:', document.contains(glitterCanvas), 'display:', window.getComputedStyle(glitterCanvas).display);
   }
 
   let audioCtx, analyser, dataArray, source, stream;
@@ -385,7 +377,6 @@
     if (window.MeterDisplay) {
       meterDisplay = new window.MeterDisplay('metersCanvas');
       meterDisplay.setDetailLevel(detailLevel);
-      console.log('[MeterDisplay] Initialized on page load');
     } else {
       console.warn('[MeterDisplay] Class not available on window');
     }
@@ -3341,10 +3332,7 @@
 
   // Enable glitter effect if initial theme is glitter
   if(glitterLayer && THEME.currentPalette === 'glitter'){
-    console.log('[Glitter] Initial theme is glitter, starting effect');
     glitterLayer.start();
-  } else if(glitterLayer) {
-    console.log('[Glitter] Initial theme is', THEME.currentPalette, '- not starting glitter');
   }
 
   themeSelect.addEventListener('change', ()=>{

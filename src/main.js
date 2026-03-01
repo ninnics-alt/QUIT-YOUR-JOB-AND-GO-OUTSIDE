@@ -150,12 +150,8 @@ app.whenReady().then(() => {
   
   createWindow();
   
-  console.log('[Main] App is packaged:', app.isPackaged);
-  console.log('[Main] Platform:', process.platform);
-  
   // Register keyboard shortcut to open DevTools (Cmd+Option+I)
   const shortcutRegistered = globalShortcut.register('CmdOrCtrl+Alt+I', () => {
-    console.log('[Main] Cmd+Alt+I pressed');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
