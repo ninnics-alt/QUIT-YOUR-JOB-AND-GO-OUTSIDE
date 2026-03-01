@@ -1,4 +1,11 @@
 (async function(){
+  const AUTO_DEVTOOLS_LOGGING = false;
+  if (!AUTO_DEVTOOLS_LOGGING) {
+    console.log = () => {};
+    console.info = () => {};
+    console.debug = () => {};
+  }
+
   const deviceSelect = document.getElementById('deviceSelect');
   const startBtn = document.getElementById('start');
   const themeSelect = document.getElementById('themeSelect');
@@ -35,7 +42,7 @@
 
   const appState = {
     isMiniMode: false,
-    miniModuleId: 'miniMeters',
+    miniModuleId: 'panel-vectorscope',
     miniCorner: 'top-right'
   };
   const MINI_WINDOW_WIDTH = 460;
@@ -979,15 +986,6 @@
         }catch(e){ console.warn('MeterDisplay render error:', e); }
       }
 
-      if(appState.isMiniMode && appState.miniModuleId === 'miniMeters' && window.MiniModeController){
-        window.MiniModeController.drawMiniMeters({
-          momentaryLufs: stats.momentaryLufs,
-          rmsDbfs: uiDisplaySmoothed.rmsDbs,
-          peakDbfs: uiDisplaySmoothed.peakDbfs,
-          holdDbfs: uiDisplaySmoothed.holdDbfs
-        });
-      }
-      
       requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
@@ -1395,6 +1393,7 @@
       this.style = 'minmax'; // 'line' | 'dots' | 'minmax' | 'phosphor'
       this.triggerMode = 'rising'; // 'off' | 'rising' | 'falling'
       this.triggerLevel = 0.0;
+      this.autoTriggerLevel = true;
       this.triggerHoldoff = 2; // ms
       this.persistence = true;
       this.dotSize = 1.5;
@@ -1419,6 +1418,14 @@
       this.peakDbfs = -120;
       this.rmsDbfs = -120;
       this.correlation = 0;
+      
+      // Readout hold state (freeze display values for easier reading)
+      this.readoutHoldTime = 500; // ms to hold values
+      this.lastReadoutUpdate = 0;
+      this.displayPeak = -120;
+      this.displayRms = -120;
+      this.displayCorr = 0;
+      this.displayTriggerLevel = 0;
       
       // Bind controls
       this.initControls();
@@ -1456,7 +1463,8 @@
       const spacing = (window.THEME && window.THEME.spacing) ? window.THEME.spacing : { sm: 8, md: 12, lg: 16 };
       const pad = spacing.md || 12;
       const topPad = spacing.sm || 8;
-      const readoutH = 56;
+      const readoutRect = this.readoutEl ? this.readoutEl.getBoundingClientRect() : null;
+      const readoutH = Math.max(36, Math.ceil((readoutRect && readoutRect.height) ? readoutRect.height : 44));
       const drawX = pad;
       const drawY = topPad;
       const drawW = Math.max(1, w - pad * 2);
@@ -1561,6 +1569,25 @@
     
     findTrigger(data, startIdx = 0) {
       if(this.triggerMode === 'off') return -1;
+
+      if(this.autoTriggerLevel && data && data.length > 0) {
+        const sampleCount = Math.min(data.length, 2048);
+        let min = Infinity;
+        let max = -Infinity;
+
+        for(let i = 0; i < sampleCount; i++) {
+          const value = data[i];
+          if(value < min) min = value;
+          if(value > max) max = value;
+        }
+
+        const span = max - min;
+        if(span > 1e-5) {
+          const center = (max + min) * 0.5;
+          const offset = span * 0.08;
+          this.triggerLevel = this.triggerMode === 'rising' ? (center + offset) : (center - offset);
+        }
+      }
       
       const now = performance.now();
       if(now - this.lastTriggerTime < this.triggerHoldoff) return -1;
@@ -1947,36 +1974,46 @@
     updateReadout() {
       if(!this.readoutEl) return;
       
+      const now = performance.now();
+      
+      // Update display values if hold time has elapsed
+      if(now - this.lastReadoutUpdate > this.readoutHoldTime) {
+        this.displayPeak = this.peakDbfs;
+        this.displayRms = this.rmsDbfs;
+        this.displayCorr = this.correlation;
+        this.displayTriggerLevel = this.triggerLevel;
+        this.lastReadoutUpdate = now;
+      }
+      
       const parts = [];
       
       if(this.mode === 'time') {
-        parts.push(`Mode: <span class="value">${this.display.toUpperCase()}</span>`);
-        parts.push(`${this.timebase.toFixed(1)} <span class="value">ms/div</span>`);
+        parts.push(`<span class="value">${this.timebase.toFixed(1)}ms/div</span>`);
         
         if(this.triggerMode !== 'off') {
-          parts.push(`Trig: <span class="value">${this.triggerMode.toUpperCase()} @ ${this.triggerLevel.toFixed(2)}</span>`);
+          parts.push(`Trig:<span class="value">${this.triggerMode.toUpperCase()}@${this.displayTriggerLevel.toFixed(2)}</span>`);
         }
         
-        parts.push(`Peak: <span class="value">${this.peakDbfs.toFixed(1)} dBFS</span>`);
-        parts.push(`RMS: <span class="value">${this.rmsDbfs.toFixed(1)} dBFS</span>`);
+        parts.push(`P:<span class="value">${this.displayPeak.toFixed(1)}</span>`);
+        parts.push(`R:<span class="value">${this.displayRms.toFixed(1)}</span>`);
         
         if(this.display === 'stereo' || this.display === 'side') {
-          parts.push(`Corr: <span class="value">${this.correlation.toFixed(2)}</span>`);
+          parts.push(`C:<span class="value">${this.displayCorr.toFixed(2)}</span>`);
         }
       } else if(this.mode === 'xy') {
         parts.push(`Mode: <span class="value">XY (Lissajous)</span>`);
-        parts.push(`Corr: <span class="value">${this.correlation.toFixed(2)}</span>`);
+        parts.push(`Corr: <span class="value">${this.displayCorr.toFixed(2)}</span>`);
         
         // Calculate width % (stereo width indicator)
-        const width = Math.sqrt(1 - this.correlation * this.correlation) * 100;
+        const width = Math.sqrt(1 - this.displayCorr * this.displayCorr) * 100;
         parts.push(`Width: <span class="value">${width.toFixed(0)}%</span>`);
         
         // L/R balance
-        const balance = this.peakDbfs > -60 ? 0 : 0; // Simplified
+        const balance = this.displayPeak > -60 ? 0 : 0; // Simplified
         parts.push(`Balance: <span class="value">C</span>`);
       }
       
-      this.readoutEl.innerHTML = parts.join(' <span style="color:' + THEME.colors.grid + '">|</span> ');
+      this.readoutEl.innerHTML = parts.join(' ');
     }
   }
   
@@ -3161,7 +3198,7 @@
         goniMode: 'L/R',
         goniMapping: 'LR',
         goniRotate: 45,
-        miniModuleId: 'miniMeters',
+        miniModuleId: 'panel-vectorscope',
         miniCorner: 'top-right'
       };
     }catch(e){ 
@@ -3174,7 +3211,7 @@
         goniMode: 'L/R',
         goniMapping: 'LR',
         goniRotate: 45,
-        miniModuleId: 'miniMeters',
+        miniModuleId: 'panel-vectorscope',
         miniCorner: 'top-right'
       }; 
     }
@@ -3188,7 +3225,7 @@
   // Apply theme using THEME.applyPalette
   // wire preference UI
   const initialSettings = loadSettings();
-  appState.miniModuleId = initialSettings.miniModuleId || 'miniMeters';
+  appState.miniModuleId = initialSettings.miniModuleId || 'panel-vectorscope';
   appState.miniCorner = initialSettings.miniCorner || 'top-right';
   themeSelect.value = initialSettings.theme || 'ps2';
   autoStartEl.checked = !!initialSettings.autoStart;

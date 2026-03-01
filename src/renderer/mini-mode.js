@@ -21,7 +21,7 @@
   let miniCanvasRO;
 
   let isMiniMode = false;
-  let currentModuleId = 'miniMeters';
+  let currentModuleId = 'panel-vectorscope';
   let originalParents = new Map();
   let callbacks = {
     onModuleChange: null,
@@ -101,11 +101,9 @@
       canvases.forEach(canvas => {
         const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-        console.log('[MiniMode] Canvas size check:', canvas.id, rect.width, 'x', rect.height);
         if (rect.width > 0 && rect.height > 0) {
           const w = Math.round(rect.width * dpr);
           const h = Math.round(rect.height * dpr);
-          console.log('[MiniMode] Setting canvas to:', w, 'x', h, 'dpr:', dpr);
           canvas.width = w;
           canvas.height = h;
           canvas.style.width = rect.width + 'px';
@@ -186,7 +184,7 @@
   }
 
   function applyModule(moduleId) {
-    currentModuleId = moduleId || 'miniMeters';
+    currentModuleId = moduleId || 'panel-vectorscope';
 
     restoreAllPanels();
 
@@ -216,7 +214,7 @@
     if (miniCornerSelect && options && options.corner) {
       miniCornerSelect.value = options.corner;
     }
-    applyModule((options && options.moduleId) || (miniModuleSelect && miniModuleSelect.value) || 'miniMeters');
+    applyModule((options && options.moduleId) || (miniModuleSelect && miniModuleSelect.value) || 'panel-vectorscope');
     setLayoutState(true);
   }
 
