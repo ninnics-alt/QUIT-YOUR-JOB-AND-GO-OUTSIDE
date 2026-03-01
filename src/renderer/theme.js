@@ -357,7 +357,6 @@ const THEME = {
     // Meter label font (dynamic per theme)
     get monoSmall() {
       const themeFonts = THEMES[THEME.currentPalette];
-      console.log('[THEME monoSmall getter] currentPalette:', THEME.currentPalette, 'themeFonts:', themeFonts);
       if (themeFonts && themeFonts.meterFontLabel) {
         return `9px ${themeFonts.meterFontLabel}`;
       }

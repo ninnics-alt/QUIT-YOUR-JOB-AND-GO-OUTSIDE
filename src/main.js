@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog, globalShortcut, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, globalShortcut, Menu, systemPreferences } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -185,6 +185,22 @@ ipcMain.on('log-devices', (event, devices) => {
     fs.appendFileSync(logPath, entry);
   }catch(e){
     console.error('Failed to write device log', e);
+  }
+});
+
+ipcMain.handle('request:microphone', async () => {
+  try {
+    if (process.platform === 'darwin') {
+      const status = await systemPreferences.askForMediaAccess('microphone');
+      console.log('[Main] Microphone permission status:', status);
+      return { granted: status, platform: 'darwin' };
+    } else {
+      // On non-macOS, permission is handled by the browser
+      return { granted: true, platform: process.platform };
+    }
+  } catch (err) {
+    console.error('[Main] Failed to request microphone permission:', err);
+    return { granted: false, error: err.message, platform: process.platform };
   }
 });
 

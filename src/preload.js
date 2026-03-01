@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('electron', {
   saveAudioToPath: (filePath, audioData) => ipcRenderer.invoke('capture:saveAudioToPath', { filePath, audioData }),
   openCapturesFolder: () => ipcRenderer.invoke('capture:openFolder'),
   showSaveDialog: (defaultFilename) => ipcRenderer.invoke('dialog:showSaveDialog', String(defaultFilename || 'audio-capture')),
+  requestMicrophonePermission: () => ipcRenderer.invoke('request:microphone'),
 });

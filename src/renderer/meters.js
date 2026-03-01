@@ -11,17 +11,14 @@ const HOLD_DECAY_DB_PER_SEC = 12.0; // 12 dB/sec decay rate
 
 class MeterDisplay {
   constructor(canvasId) {
-    console.log('[METERS] MeterDisplay constructor called with canvasId:', canvasId);
     this.canvas = document.getElementById(canvasId);
-    console.log('[METERS] Canvas element:', this.canvas);
     if (!this.canvas) {
-      console.error('[METERS] ERROR: Canvas not found!');
+      console.error('[METERS] Canvas not found:', canvasId);
       return;
     }
     this.ctx = this.canvas.getContext('2d');
     this.width = this.canvas.width;
     this.height = this.canvas.height;
-    console.log('[METERS] Canvas size:', this.width, 'x', this.height);
 
     // Meter data (raw DSP values, not smoothed)
     this.meters = {
@@ -61,12 +58,8 @@ class MeterDisplay {
   }
 
   render() {
-    console.log('[METERS] render() called');
     const { colors, spacing } = THEME;
-    
-    // Access fonts directly to ensure getters are called
     const fonts = THEME.fonts;
-    console.log('[METERS] Theme:', THEME.currentPalette, 'Font (sansLarge):', fonts.sansLarge);
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'top';
     this.ctx.fillText('Level Meters', spacing.md, spacing.md);

@@ -530,6 +530,21 @@
   async function start(){
     const deviceId = deviceSelect.value || undefined;
     console.log('[Audio] Starting stream with device:', deviceId || 'default');
+    
+    // Request microphone permission explicitly (especially important on macOS)
+    if (window.electron && window.electron.requestMicrophonePermission) {
+      try {
+        const permResult = await window.electron.requestMicrophonePermission();
+        console.log('[Audio] Permission result:', permResult);
+        if (!permResult.granted && permResult.error) {
+          alert('Microphone permission denied. Please grant permission in System Preferences.');
+          return;
+        }
+      } catch (err) {
+        console.error('[Audio] Permission request failed:', err);
+      }
+    }
+    
     try{
       // Request stereo audio with optimal constraints
       let constraints;
