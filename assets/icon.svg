@@ -1,0 +1,7 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#000000"/>
+  <text x="512" y="512" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">
+    <tspan x="512" dy="0">QUIT YOUR JOB</tspan>
+    <tspan x="512" dy="100">AND GO OUTSIDE</tspan>
+  </text>
+</svg>

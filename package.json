@@ -10,6 +10,7 @@
     "package:mac:arm64": "electron-packager . \"QUIT YOUR JOB AND GO OUTSIDE\" --platform=darwin --arch=arm64 --overwrite --out=dist"
   },
   "devDependencies": {
+    "canvas": "^3.2.1",
     "electron": "^26.0.0",
     "electron-packager": "^16.0.0"
   }
