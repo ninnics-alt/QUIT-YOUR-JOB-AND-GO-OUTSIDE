@@ -10,6 +10,8 @@
   const startBtn = document.getElementById('start');
   const themeSelect = document.getElementById('themeSelect');
   const autoStartEl = document.getElementById('autoStart');
+  const inputGainSlider = document.getElementById('inputGain');
+  const inputGainVal = document.getElementById('inputGainVal');
   const minimodeBtn = document.getElementById('toggleMinimode');
   const lufsEl = document.getElementById('lufs');
   const wasmStatusEl = document.getElementById('wasmStatus');
@@ -84,7 +86,7 @@
     if(window.electron && window.electron.minimodeDisable){
       await window.electron.minimodeDisable();
     }
-    // Reload the window to reset all panels to their initial state
+    // Reload to properly re-initialize modules
     window.location.reload();
   }
 
@@ -599,10 +601,34 @@
     sampleRate = audioCtx.sampleRate || 48000;
     source = audioCtx.createMediaStreamSource(stream);
 
-    // Input gain node (no correction needed with proper DAW levels)
+    // Expose stream and audioCtx to window for capture functionality
+    window.appAudioStream = stream;
+    window.appAudioContext = audioCtx;
+    console.log('[App] Audio context exposed - sampleRate:', audioCtx.sampleRate);
+    console.log('[App] audioCtx.createAudioBuffer:', typeof audioCtx.createAudioBuffer);
+    
+    // Create input gain node for clip buffer capture
     const inputGain = audioCtx.createGain();
     inputGain.gain.value = 1.0; // Unity gain
     source.connect(inputGain);
+    console.log('[App] InputGain node created and connected');
+    
+    // Initialize clip buffer for continuous background recording
+    if (window.MiniModeController) {
+      console.log('[App] Calling initializeClipBuffer with:', {
+        audioCtxType: typeof audioCtx,
+        audioCtxHasCreateAudioBuffer: typeof audioCtx.createAudioBuffer,
+        audioCtxSampleRate: audioCtx.sampleRate
+      });
+      window.MiniModeController.initializeClipBuffer(audioCtx, inputGain);
+      console.log('[App] initializeClipBuffer completed');
+    } else {
+      console.warn('[App] MiniModeController not available yet');
+    }
+    
+    // Expose the input gain for other connections
+    window.appAudioInputGain = inputGain;
+    console.log('[App] InputGain exposed to window.appAudioInputGain');
 
     // Debug: Log stream info
     console.log('[Audio] Stream active:', stream.active);
@@ -3229,6 +3255,16 @@
   appState.miniCorner = initialSettings.miniCorner || 'top-right';
   themeSelect.value = initialSettings.theme || 'ps2';
   autoStartEl.checked = !!initialSettings.autoStart;
+  
+  // Restore input gain setting
+  if (inputGainSlider) {
+    inputGainSlider.value = initialSettings.inputGain !== undefined ? initialSettings.inputGain : 0;
+    if (inputGainVal) {
+      const dbValue = parseFloat(inputGainSlider.value);
+      inputGainVal.textContent = dbValue.toFixed(1) + ' dB';
+    }
+  }
+  
   THEME.applyPalette(themeSelect.value);
   
   // Load visualization settings
@@ -3310,6 +3346,24 @@
   autoStartEl.addEventListener('change', ()=>{
     saveSettings({autoStart: autoStartEl.checked});
   });
+
+  if (inputGainSlider && inputGainVal) {
+    inputGainSlider.addEventListener('input', (e) => {
+      const dbValue = parseFloat(e.target.value);
+      inputGainVal.textContent = dbValue.toFixed(1) + ' dB';
+      
+      // Convert dB to linear gain: gain = 10^(dB/20)
+      const linearGain = Math.pow(10, dbValue / 20);
+      
+      // Update the audio context gain node if available
+      if (window.appAudioInputGain) {
+        window.appAudioInputGain.gain.setValueAtTime(linearGain, window.appAudioContext.currentTime);
+        console.log('[Trim] Input gain set to', dbValue, 'dB (linear:', linearGain.toFixed(3), ')');
+      }
+      
+      saveSettings({inputGain: dbValue});
+    });
+  }
 
   // try auto-start if allowed by setting
   if(initialSettings.autoStart){

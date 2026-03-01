@@ -1243,6 +1243,199 @@ canvas {
   border: 0;
 }
 
+.mini-capture-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--grid-light);
+  background-color: var(--bg-secondary, var(--bg-panel));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 20px;
+}
+
+.capture-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.capture-btn {
+  height: 50px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  border: 2px solid var(--grid-light);
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  min-width: 100px;
+}
+
+.capture-btn-start {
+  border-color: #00ff00;
+  color: #00ff00;
+}
+
+.capture-btn-start:hover {
+  background-color: rgba(0, 255, 0, 0.1);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.capture-btn-stop {
+  border-color: #ff0000;
+  color: #ff0000;
+}
+
+.capture-btn-stop:hover {
+  background-color: rgba(255, 0, 0, 0.1);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+}
+
+.capture-btn-open {
+  border-color: #00aaff;
+  color: #00aaff;
+  font-size: 12px;
+  padding: 8px 16px;
+  height: auto;
+  min-width: auto;
+}
+
+.capture-btn-open:hover {
+  background-color: rgba(0, 170, 255, 0.1);
+  box-shadow: 0 0 10px rgba(0, 170, 255, 0.3);
+}
+
+/* Save Audio Dialog */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.dialog-overlay[hidden] {
+  display: none !important;
+}
+
+.dialog-box {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--grid-light);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 350px;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.dialog-box h3 {
+  margin: 0 0 15px 0;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.dialog-input-group {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dialog-input-group label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dialog-input {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--grid-light);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.dialog-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 8px rgba(0, 150, 255, 0.3);
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.dialog-btn {
+  padding: 10px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--grid-light);
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.dialog-btn-cancel {
+  background-color: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.dialog-btn-cancel:hover {
+  background-color: rgba(255, 100, 100, 0.1);
+  border-color: #ff6464;
+  color: #ff6464;
+}
+
+.dialog-btn-ok {
+  background-color: rgba(0, 255, 0, 0.1);
+  border-color: #00ff00;
+  color: #00ff00;
+}
+
+.dialog-btn-ok:hover {
+  background-color: rgba(0, 255, 0, 0.2);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.capture-time {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 16px;
+  color: var(--text-primary);
+  min-width: 50px;
+  text-align: center;
+}
+
+.capture-info {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.capture-status {
+  font-size: 12px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
 body[data-layout="mini"] header,
 body[data-layout="mini"] .vizGrid,
 body[data-layout="mini"] .glitter-underlay,

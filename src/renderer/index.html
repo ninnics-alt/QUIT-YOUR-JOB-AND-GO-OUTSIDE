@@ -179,6 +179,7 @@
           <option value="panel-goniometer">Goniometer</option>
           <option value="panel-wave">Bass Car / Waveform</option>
           <option value="panel-meters">Instrument Meters</option>
+          <option value="capture">CAPTURE</option>
         </select>
         <select id="miniCornerSelect" class="mini-mode-select" title="Window corner">
           <option value="top-right">Top Right</option>
@@ -186,12 +187,54 @@
           <option value="bottom-right">Bottom Right</option>
           <option value="bottom-left">Bottom Left</option>
         </select>
+        <button id="miniClipBtn" class="mini-mode-btn" title="Save last 10/60 seconds of audio">📎 CLIP</button>
         <button id="miniExitBtn" class="mini-mode-btn" title="Exit minimode">Exit</button>
       </div>
       <div id="miniModeBody" class="mini-mode-body">
         <div id="miniMetersWrap" class="mini-meters-wrap">
           <canvas id="miniMetersCanvas"></canvas>
         </div>
+        <div id="miniCaptureWrap" class="mini-capture-wrap" hidden>
+          <div class="capture-controls">
+            <button id="captureStartBtn" class="capture-btn capture-btn-start">● REC</button>
+            <button id="captureStopBtn" class="capture-btn capture-btn-stop" hidden>⏹ STOP</button>
+            <span id="captureTime" class="capture-time">00:00</span>
+          </div>
+          <div class="capture-info">
+            <p id="captureStatus" class="capture-status">Ready to record</p>
+            <button id="captureOpenBtn" class="capture-btn capture-btn-open" style="margin-top: 10px; display: none;">📁 Open Folder</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save Audio Dialog -->
+    <div id="saveAudioDialog" class="dialog-overlay" hidden>
+      <div class="dialog-box">
+        <h3>Save Audio Capture</h3>
+        <div class="dialog-input-group">
+          <label for="saveAudioName">File Name:</label>
+          <input type="text" id="saveAudioName" class="dialog-input" placeholder="audio-capture">
+        </div>
+        <div class="dialog-buttons">
+          <button id="saveAudioCancelBtn" class="dialog-btn dialog-btn-cancel">Cancel</button>
+          <button id="saveAudioOkBtn" class="dialog-btn dialog-btn-ok">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clip Duration Dialog -->
+    <div id="clipDurationDialog" class="dialog-overlay" hidden>
+      <div class="dialog-box">
+        <h3>Save Audio Clip</h3>
+        <p style="margin: 10px 0; font-size: 13px;">How many seconds to record?</p>
+        <div class="dialog-buttons" style="gap: 10px;">
+          <button id="clipDuration10" class="dialog-btn dialog-btn-ok">Last 10 seconds</button>
+          <button id="clipDuration60" class="dialog-btn dialog-btn-ok">Last 60 seconds</button>
+          <button id="clipDurationCancel" class="dialog-btn dialog-btn-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
       </div>
     </div>
   </div>
